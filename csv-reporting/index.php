@@ -410,16 +410,15 @@ th{background:#f6f6f6;color:#000000}
 <a href="" target="_self" class="fk-menu-link">index.php</a>
 <a href="?_page=map" target="_blank" class="fk-menu-link">map.php</a>
 <a href="?_page=raw" target="_blank" class="fk-menu-link">raw.php</a>
-<!--<a href="?_page=raw" target="_blank" class="fk-menu-link">raw.php</a>-->
 </br>
 <a href="?_page=edit" target="_blank" class="fk-menu-link">edit.php</a>
 <a href="data.json" target="_blank" class="fk-menu-link">data.json</a>
 </br>
 <a href="?_page=<?= $csvreporting_dwltype ?>" target="_blank" class="fk-menu-link">dwl.php</a>
-<a href="<?php echo h($csvreporting_csvfile);?>" target="_blank" class="fk-menu-link"><?php echo h($csvreporting_csvfile);?></a>
+<a href="<?= h($csvreporting_csvfile);?>" target="_blank" class="fk-menu-link"><?php echo h($csvreporting_csvfile);?></a>
 </br></br></br></br></br></br></br></br></br></br></br></br></br></br></br></br></br></br></br></br>
 <a href="update_log.txt" target="_blank" class="fk-menu-link">update_log.txt</a>
-<a href="view-source:?_page=license" target="_blank" class="fk-menu-link">LICENSE</a>
+<a href="view-source:/?_page=license" target="_blank" class="fk-menu-link">LICENSE</a>
 
 </nav>
 </div>
