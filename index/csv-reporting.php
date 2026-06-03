@@ -2,7 +2,7 @@
 declare(strict_types=1);
 ///////////////////////
 $csvreporting_dwlextpage = ''; #http
-$csvreporting_dwltype='dwlphp'; #dwlphp, dwlcsv
+$csvreporting_dwltype='php'; #php, csv (csv direkt/php downloader)
 //$csvreporting_dwlfilters=['header'=>['value'],];
 $csvreporting_projectpath=''; #change to "dir" if working dir is like /var/www/html/"dir"/
 $csvreporting_title='CSV-REPORTING';
@@ -12,7 +12,6 @@ $csvreporting_jsonfile='data.json';
 $csvreporting_jspnbakdir='/var/www/html/'.$csvreporting_projectpath.'/tmp';
 $csvreporting_csvdir='/var/www/html/'.$csvreporting_projectpath.'/'.$csvreporting_csvfile;
 $csvreporting_jsondir='/var/www/html/'.$csvreporting_projectpath.'/'.$csvreporting_jsonfile;
-$csvreporting_dwlpage='?_page='.$csvreporting_dwltype;
 $csvreporting_editorheading=$csvreporting_heading.' '.$csvreporting_editortitle;
 $csvreporting_editortitle='Rules Editor';
 
