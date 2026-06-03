@@ -1,5 +1,4 @@
 <?php
-$csv-reporting_heading=$csv-reporting_heading.$csv-reporting_editortitle;
 if(!is_dir($backup_dir))@mkdir($backup_dir,0775,true);
 $default=['header_line'=>'','show_columns'=>[],'rules'=>[],'column_renames'=>[],'enable_links'=>false,'column_links'=>[]];
 $load_error='';$save_msg='';
@@ -83,7 +82,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 </style>
 </head>
 <body>
-<h1><?=$csv-reporting_heading?></h1>
+<h1><?=$csv-reporting_editorheading?></h1>
 <?php if($save_msg){?><div class="info"><?php echo h($save_msg);?></div><?php } ?>
 <?php if($load_error){?><div class="error"><?php echo h($load_error);?></div><?php } ?>
 <form method="post" id="rules-form" onkeydown="if(event.key==='Enter'&&event.target.tagName==='INPUT')event.preventDefault()">
