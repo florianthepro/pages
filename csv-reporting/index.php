@@ -415,7 +415,7 @@ th{background:#f6f6f6;color:#000000}
 <a href="?_page=edit" target="_blank" class="fk-menu-link">edit.php</a>
 <a href="data.json" target="_blank" class="fk-menu-link">data.json</a>
 </br>
-<a href="?_page=dwl" target="_blank" class="fk-menu-link">dwl.php</a>
+<a href="?_page=<?= $dwl_type ?>" target="_blank" class="fk-menu-link">dwl.php</a>
 <a href="<?php echo h($CSV_FILE);?>" target="_blank" class="fk-menu-link"><?php echo h($CSV_FILE);?></a>
 </br></br></br></br></br></br></br></br></br></br></br></br></br></br></br></br></br></br></br></br>
 <a href="update_log.txt" target="_blank" class="fk-menu-link">update_log.txt</a>
