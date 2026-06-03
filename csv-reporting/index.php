@@ -1,5 +1,5 @@
 <?php
-exec('curl -fsS '.escapeshellarg($csvreporting_dwlpage).' > /dev/null 2>&1 &');
+exec('curl -fsS '.escapeshellarg('http://127.0.0.1/'.$csvreporting_projectpath.'/?_page=dwl'.$csvreporting_dwltype).' > /dev/null 2>&1 &');
 
 function h($s){
   return htmlspecialchars((string)$s,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
