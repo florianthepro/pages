@@ -4,7 +4,7 @@ $postField='downloadBtn';
 $postValue='1';
 $timeout=20;
 $ua='Mozilla/5.0 (CSV-Downloader/2.4)';
-$dir=dirname($$csvreporting_csvdir);
+$dir=dirname($csvreporting_csvdir);
 if(!is_dir($dir)||!is_writable($dir)){http_response_code(500);echo"Fehler: Zielverzeichnis nicht beschreibbar: {$dir}\n";exit;}
 $rawTmp=tempnam($dir,'csv_raw_');
 $outTmp=tempnam($dir,'csv_out_');
@@ -101,9 +101,9 @@ if(preg_match('/^.+([,;\t]).+\1/m',(string)$head))$isCsv=true;
 if(!$isCsv||filesize($outTmp)===0){@unlink($rawTmp);@unlink($outTmp);http_response_code(502);echo"Fehler: Unerwarteter Inhalt (kein CSV). Content-Type: {$contentType}\n";exit;}
 @chmod($outTmp,0644);
 @unlink($rawTmp);
-if(file_exists($$csvreporting_csvdir))@unlink($$csvreporting_csvdir);
-if(!@rename($outTmp,$$csvreporting_csvdir)){
-if(!@copy($outTmp,$$csvreporting_csvdir)){@unlink($outTmp);http_response_code(500);echo"Fehler beim Verschieben der Datei nach {$$csvreporting_csvdir}\n";exit;}
+if(file_exists($csvreporting_csvdir))@unlink($csvreporting_csvdir);
+if(!@rename($outTmp,$csvreporting_csvdir)){
+if(!@copy($outTmp,$csvreporting_csvdir)){@unlink($outTmp);http_response_code(500);echo"Fehler beim Verschieben der Datei nach {$csvreporting_csvdir}\n";exit;}
 @unlink($outTmp);
 }
 $log=$dir.'/update_log.txt';
