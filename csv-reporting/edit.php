@@ -1,6 +1,5 @@
 <?php
-$title='Rules Editor';//$title='Rules Editor';
-$heading=$heading.' - Rules Editor';//$heading='Rules Editor';
+$csv-reporting_heading=$csv-reporting_heading.$csv-reporting_editortitle;
 if(!is_dir($backup_dir))@mkdir($backup_dir,0775,true);
 $default=['header_line'=>'','show_columns'=>[],'rules'=>[],'column_renames'=>[],'enable_links'=>false,'column_links'=>[]];
 $load_error='';$save_msg='';
@@ -24,7 +23,7 @@ $show_columns=is_array($parsed['show_columns']??null)?$parsed['show_columns']:[]
 $column_renames=is_array($parsed['column_renames']??null)?$parsed['column_renames']:[];
 $enable_links=!empty($parsed['enable_links']);
 $column_links=is_array($parsed['column_links']??null)?$parsed['column_links']:[];
-$csvCols=[];//$csvFile=__DIR__.'/'.$CSV_FILE;$csvCols=[];
+$csvCols=[];//$csvFile=__DIR__.'/'.$csv-reporting_csvfile;$csvCols=[];
 if(is_readable($csvFile)){$fh=@fopen($csvFile,'r');if($fh){$first=@fgetcsv($fh);@fclose($fh);if(is_array($first))$csvCols=array_map('trim',$first);}}
 if($header_line===''&&$csvCols)$header_line=implode(',',$csvCols);
 if(!$show_columns)$show_columns=$csvCols;
@@ -40,7 +39,7 @@ function h($s){return htmlspecialchars((string)$s,ENT_QUOTES|ENT_SUBSTITUTE,'UTF
 <head>
 <meta charset="utf-8">
 <meta name="color-scheme" content="only light">
-<title><?=$title?></title>
+<title><?=$csv-reporting_editortitle?></title>
 <link rel="icon" href="https://raw.githubusercontent.com/florianthepro/csv-reporting/refs/heads/data/rules.svg"><style>
 body{font-family:Arial,Helvetica,sans-serif;margin:18px;background:#fff;color:#000}
 h1,h2{margin:0 0 8px 0}
@@ -84,7 +83,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 </style>
 </head>
 <body>
-<h1><?=$heading?></h1>
+<h1><?=$csv-reporting_heading?></h1>
 <?php if($save_msg){?><div class="info"><?php echo h($save_msg);?></div><?php } ?>
 <?php if($load_error){?><div class="error"><?php echo h($load_error);?></div><?php } ?>
 <form method="post" id="rules-form" onkeydown="if(event.key==='Enter'&&event.target.tagName==='INPUT')event.preventDefault()">
