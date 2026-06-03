@@ -1,6 +1,5 @@
 <?php
 declare(strict_types=1);
-$csvreporting_dwlpage='http://127.0.0.1/'.$csvreporting_projectpath.'/index.php?_page='.$csvreporting_dwltype;
 $postField='downloadBtn';
 $postValue='1';
 $timeout=20;
