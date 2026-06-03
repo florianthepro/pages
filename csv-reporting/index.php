@@ -419,7 +419,7 @@ th{background:#f6f6f6;color:#000000}
 <a href="<?php echo h($csvreporting_csvfile);?>" target="_blank" class="fk-menu-link"><?php echo h($csvreporting_csvfile);?></a>
 </br></br></br></br></br></br></br></br></br></br></br></br></br></br></br></br></br></br></br></br>
 <a href="update_log.txt" target="_blank" class="fk-menu-link">update_log.txt</a>
-<a href="?_page=license" target="_blank" class="fk-menu-link">LICENSE</a>
+<a href="view-source:?_page=license" target="_blank" class="fk-menu-link">LICENSE</a>
 
 </nav>
 </div>
