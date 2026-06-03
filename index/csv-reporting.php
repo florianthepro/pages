@@ -2,7 +2,7 @@
 declare(strict_types=1);
 ///////////////////////
 $csvreporting_dwlextpage = ''; #http
-$csvreporting_dwltype='csvreporting'.'dwlphp'; #dwlphp, dwlcsv
+$csvreporting_dwltype='dwlphp'; #dwlphp, dwlcsv
 //$csvreporting_dwlfilters=['header'=>['value'],];
 $csvreporting_projectpath=''; #change to "dir" if working dir is like /var/www/html/"dir"/
 $csvreporting_title='CSV-REPORTING';
