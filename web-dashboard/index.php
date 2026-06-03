@@ -5,6 +5,7 @@ header("X-Content-Type-Options: nosniff");
 header("Referrer-Policy: no-referrer");
 header("Permissions-Policy: geolocation=(), microphone=(), camera=()");
 $allow_private_fetch=false;
+$json_file = __DIR__ . "/data/data.json";
 function deep_defaults($in,$def){if(!is_array($in))return $def;foreach($def as $k=>$v){if(!array_key_exists($k,$in)){$in[$k]=$v;continue;}if(is_array($v))$in[$k]=deep_defaults($in[$k],$v);}return $in;}
 $default=["meta"=>["timezone"=>"Europe/Berlin","autosync_hours"=>6,"autosync_seconds"=>30,"globalRotationSpeed"=>1,"title"=>"","icon"=>"","favicon"=>"","themeColor"=>"","carouselIframeRefreshSeconds"=>0],"pages"=>[["id"=>"p1","name"=>"Page 1","thumb"=>"","settings"=>["w"=>3840,"h"=>2160],"background"=>["fade"=>1,"items"=>[]],"widgets"=>[]]],"schedules"=>[]];
 function sanitize_data($d,$default){
@@ -37,7 +38,10 @@ if(!isset($r["override"]["widgets"])||!(is_array($r["override"]["widgets"])||is_
 }
 return $d;
 }
-function json_path(){ $p1=__DIR__."/data/data.json"; $p2=__DIR__."/data.json"; if(file_exists($p1))return $p1; return $p2; }
+function json_path(){
+    global $json_file;
+    return $json_file;
+}
 function safe_href($s){$s=trim((string)$s);if($s==="")return "";if(str_starts_with($s,"data:image/"))return $s;if(filter_var($s,FILTER_VALIDATE_URL)){ $u=parse_url($s);$sch=strtolower($u["scheme"]??"");return ($sch==="http"||$sch==="https")?$s:""; }if(preg_match('~^[a-zA-Z][a-zA-Z0-9+\-.]*:~',$s))return "";if(preg_match('~[\x00-\x1F\x7F]~',$s))return "";return $s;}
 function checkHostSafe($host,$allow_private_fetch){$ips=@gethostbynamel($host);if(!$ips)return false;if($allow_private_fetch)return true;foreach($ips as $ip){if(!filter_var($ip,FILTER_VALIDATE_IP,FILTER_FLAG_NO_PRIV_RANGE|FILTER_FLAG_NO_RES_RANGE))return false;}return true;}
 $path=json_path();
