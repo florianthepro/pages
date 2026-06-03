@@ -364,7 +364,7 @@ if($pass)$filtered[]=$row;
 <head>
 <meta charset="utf-8">
 <meta name="color-scheme" content="only light">
-<link rel="icon" type="image/svg+xml" href="https://raw.githubusercontent.com/florianthepro/csv-reporting/refs/heads/data/icon.svg">
+<link rel="icon" type="image/svg+xml" href="https://raw.githubusercontent.com/florianthepro/pages/main/csv-reporting/index.svg">
 <title><?=$title?></title>
 <style>
 body{font-family:Arial,Helvetica,sans-serif;margin:18px;background:#ffffff;color:#000000}
