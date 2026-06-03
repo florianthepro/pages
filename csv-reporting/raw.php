@@ -1,5 +1,5 @@
 <?php
-exec('curl -fsS '.escapeshellarg($webdwlpath).' > /dev/null 2>&1 &');
+exec('curl -fsS '.escapeshellarg($csv-reporting_dwlpage).' > /dev/null 2>&1 &');
 function h($s){return htmlspecialchars((string)$s,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');}
 function load_config($path){
 $out=['show_columns'=>[],'enable_links'=>false,'column_links'=>[]];
@@ -118,15 +118,15 @@ $enc=rawurlencode($idVal);
 if(strpos($pattern,'*')!==false)$href=str_replace('*',$enc,$pattern);else $href=$pattern;
 return $href;
 }
-$config=load_config($rulesFile);
+$config=load_config($csv-reporting_jsondir);
 $showColumns=$config['show_columns']??[];
 $enableLinks=!empty($config['enable_links']);
 $columnLinks=is_array($config['column_links']??null)?$config['column_links']:[];
 $idColumn=null;
 foreach($columnLinks as $k=>$v){if(trim((string)$v)==='*'){$idColumn=$k;break;}}
-$csvRows=load_csv($csvFile);
+$csvRows=load_csv($csv-reporting_csvdir);
 $csvError=null;
-if($csvRows===null)$csvError='Keine CSV gefunden oder nicht lesbar: '.$csvFile;
+if($csvRows===null)$csvError='Keine CSV gefunden oder nicht lesbar: '.$csv-reporting_csvdir;
 $header=[];
 $dataRows=[];
 if(is_array($csvRows)&&count($csvRows)>0){$header=array_map('trim',$csvRows[0]);$dataRows=array_slice($csvRows,1);}
@@ -154,7 +154,7 @@ if($passFilters)$filtered[]=$row;
 <meta charset="utf-8">
 <meta name="color-scheme" content="only light">
 <link rel="icon" type="image/svg+xml" href="https://raw.githubusercontent.com/florianthepro/csv-reporting/refs/heads/data/icon.svg">
-<title><?=$title?></title>
+<title><?=$csv-reporting_title?></title>
 <style>
 body{font-family:Arial,Helvetica,sans-serif;margin:18px;background:#ffffff;color:#000000}
 table{border-collapse:collapse;width:100%;background:#ffffff}
@@ -183,7 +183,7 @@ th{background:#f6f6f6;color:#000000}
 </style>
 </head>
 <body>
-<h2><?=$heading?></h2>
+<h2><?=$csv-reporting_heading?></h2>
 <?php if($csvError):?><div class="error"><?php echo h($csvError);?></div><?php endif;?>
 <h3>Ergebnisse (<?php echo count($filtered);?>)</h3>
 <div class="filter-toggle" onclick="toggleFilters()"><span>Filter <span class="filter-toggle-icon" id="filterToggleIcon">▼</span></span></div>
