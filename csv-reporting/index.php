@@ -1,69 +1,59 @@
 <?php
 exec('curl -fsS '.escapeshellarg('http://127.0.0.1/'.$csvreporting_projectpath.'/?_page=dwl'.$csvreporting_dwltype).' > /dev/null 2>&1 &');
-
-function h($s){
-  return htmlspecialchars((string)$s,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
-}
-
+function h($s){return htmlspecialchars((string)$s,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');}
 function load_rules($path){
-  if(!is_readable($path))return['show_columns'=>[],'rules'=>[],'enable_links'=>false,'column_links'=>[]];
-  $json=@file_get_contents($path);
-  $data=@json_decode($json,true);
-  if(!is_array($data))$data=[];
-  if(!isset($data['show_columns'])||!is_array($data['show_columns']))$data['show_columns']=[];
-  if(!isset($data['rules'])||!is_array($data['rules']))$data['rules']=[];
-  if(!isset($data['enable_links']))$data['enable_links']=false;
-  if(!isset($data['column_links'])||!is_array($data['column_links']))$data['column_links']=[];
-  return $data;
+if(!is_readable($path))return['show_columns'=>[],'rules'=>[],'enable_links'=>false,'column_links'=>[]];
+$json=@file_get_contents($path);
+$data=@json_decode($json,true);
+if(!is_array($data))$data=[];
+if(!isset($data['show_columns'])||!is_array($data['show_columns']))$data['show_columns']=[];
+if(!isset($data['rules'])||!is_array($data['rules']))$data['rules']=[];
+if(!isset($data['enable_links']))$data['enable_links']=false;
+if(!isset($data['column_links'])||!is_array($data['column_links']))$data['column_links']=[];
+return $data;
 }
-
 function parse_csv_string($csvContent){
-  $lines=preg_split("/\r\n|\n|\r/",$csvContent);
-  $rows=[];
-  foreach($lines as $line){
-    if($line==='')continue;
-    $rows[]=str_getcsv($line);
-  }
-  return $rows;
+$lines=preg_split("/\r\n|\n|\r/",$csvContent);
+$rows=[];
+foreach($lines as $line){
+if($line==='')continue;
+$rows[]=str_getcsv($line);
 }
-
+return $rows;
+}
 function load_csv($path){
-  if(!is_readable($path))return null;
-  return parse_csv_string(file_get_contents($path));
+if(!is_readable($path))return null;
+return parse_csv_string(file_get_contents($path));
 }
-
 function col_index($header,$colName){
-  foreach($header as $i=>$h){
-    if(strcasecmp(trim($h),trim($colName))===0)return $i;
-  }
-  return null;
+foreach($header as $i=>$h){
+if(strcasecmp(trim($h),trim($colName))===0)return $i;
 }
-
+return null;
+}
 function timestamp_to_minutes($timestamp){
-  $pattern='/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}$/';
-  if(!preg_match($pattern,trim($timestamp)))return null;
-  $ts=strtotime(trim($timestamp));
-  if($ts===false)return null;
-  $now=time();
-  $diff=($ts-$now)/60;
-  return round($diff,2);
+$pattern='/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}$/';
+if(!preg_match($pattern,trim($timestamp)))return null;
+$ts=strtotime(trim($timestamp));
+if($ts===false)return null;
+$now=time();
+$diff=($ts-$now)/60;
+return round($diff,2);
 }
-
 function is_timestamp_column($header,$dataRows,$colName){
-  $idx=col_index($header,$colName);
-  if($idx===null)return false;
-  $sampleCount=0;
-  foreach($dataRows as $row){
-    if(isset($row[$idx])&&$row[$idx]!==''){
-      if(timestamp_to_minutes($row[$idx])!==null){
-        $sampleCount++;
-        if($sampleCount>=3)return true;
-      }
-    }
-  }
-  return false;
+$idx=col_index($header,$colName);
+if($idx===null)return false;
+$sampleCount=0;
+foreach($dataRows as $row){
+if(isset($row[$idx])&&$row[$idx]!==''){
+if(timestamp_to_minutes($row[$idx])!==null){
+$sampleCount++;
+if($sampleCount>=3)return true;
 }
-
+}
+}
+return false;
+}
 function get_cell_value_for_filter($cellValue,$isTimestamp){
 if($isTimestamp){
 $minutes=timestamp_to_minutes($cellValue);
@@ -75,13 +65,10 @@ if($v==='')return 'n/a';
 if(strcasecmp($v,'n/a')===0||strcasecmp($v,'na')===0)return 'n/a';
 return $v;
 }
-
 function get_all_filter_values($header,$dataRows,$colName,$isTimestamp){
   $idx=col_index($header,$colName);
   if($idx===null)return [];
-
   $vals=[];
-
   foreach($dataRows as $row){
     if(isset($row[$idx])){
       $val=get_cell_value_for_filter($row[$idx],$isTimestamp);
@@ -98,7 +85,6 @@ function get_all_filter_values($header,$dataRows,$colName,$isTimestamp){
       }
     }
   }
-
   if($isTimestamp){
     usort($vals,function($a,$b){
       $aNum=intval(explode(' ',$a)[0]);
@@ -108,14 +94,11 @@ function get_all_filter_values($header,$dataRows,$colName,$isTimestamp){
   }else{
     sort($vals,SORT_NATURAL|SORT_FLAG_CASE);
   }
-
   return $vals;
 }
-
 function parse_minutes_pattern($pattern){
   $p=trim((string)$pattern);
   $pattern_clean=preg_replace('/\s+/','',strtolower($p));
-
   if(preg_match('/^>=(-?\d+(?:\.\d+)?)$/',$pattern_clean,$m)){
     return ['type'=>'gte','value'=>floatval($m[1])];
   }
@@ -134,16 +117,12 @@ function parse_minutes_pattern($pattern){
   if(preg_match('/^(-?\d+(?:\.\d+)?)$/',$pattern_clean,$m)){
     return ['type'=>'exact','value'=>floatval($m[1])];
   }
-
   return ['type'=>'invalid'];
 }
-
 function check_minutes_condition($cellValue,$pattern){
   $minutes=timestamp_to_minutes($cellValue);
   if($minutes===null)return false;
-
   $parsed=parse_minutes_pattern($pattern);
-
   switch($parsed['type']){
     case 'gt':
       return $minutes > $parsed['value'];
@@ -161,11 +140,9 @@ function check_minutes_condition($cellValue,$pattern){
       return false;
   }
 }
-
 function eval_text_op($value,$op,$cmp){
   $value=(string)$value;
   $cmp=(string)$cmp;
-
   switch($op){
     case 'wildcard':
       $pattern='/^'.str_replace(['\*','\?'],['.*','.'],preg_quote($cmp,'/')).'$/i';
@@ -192,13 +169,10 @@ function eval_text_op($value,$op,$cmp){
       return false;
   }
 }
-
 function parse_condition_pattern($pattern){
   $p=trim((string)$pattern);
-
   if($p==='*')return['op'=>'wildcard','value'=>'*'];
   if(strcasecmp($p,'n/a')===0||strcasecmp($p,'na')===0)return['op'=>'empty_or_na','value'=>''];
-
   return['op'=>'wildcard','value'=>$p];
 }
 
