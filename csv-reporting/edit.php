@@ -1,5 +1,5 @@
 <?php
-if(!is_dir($backup_dir))@mkdir($backup_dir,0775,true);
+if(!is_dir($csv-reporting_jspnbakdir))@mkdir($csv-reporting_jspnbakdir,0775,true);
 $default=['header_line'=>'','show_columns'=>[],'rules'=>[],'column_renames'=>[],'enable_links'=>false,'column_links'=>[]];
 $load_error='';$save_msg='';
 if($_SERVER['REQUEST_METHOD']==='POST'&&($_POST['action']??'')==='save'){
@@ -10,11 +10,11 @@ if(!isset($decoded['rules'])||!is_array($decoded['rules']))$decoded['rules']=[];
 if(!isset($decoded['show_columns'])||!is_array($decoded['show_columns']))$decoded['show_columns']=[];
 if(!isset($decoded['column_renames'])||!is_array($decoded['column_renames']))$decoded['column_renames']=[];
 if(!isset($decoded['column_links'])||!is_array($decoded['column_links']))$decoded['column_links']=[];
-$ts=date('Ymd_His');if(is_readable($rulesFile))@copy($rulesFile,$backup_dir.'/rules.'.$ts.'.bak');
-$ok=@file_put_contents($rulesFile,json_encode($decoded,JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE));
+$ts=date('Ymd_His');if(is_readable($csv-reporting_jsondir))@copy($csv-reporting_jsondir,$csv-reporting_jspnbakdir.'/rules.'.$ts.'.bak');
+$ok=@file_put_contents($csv-reporting_jsondir,json_encode($decoded,JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE));
 $save_msg=$ok===false?'Fehler beim Speichern.':'Gespeichert.';$parsed=$decoded;}}
 if(!isset($parsed)){
-$raw=is_readable($rulesFile)?@file_get_contents($rulesFile):json_encode($default,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+$raw=is_readable($csv-reporting_jsondir)?@file_get_contents($csv-reporting_jsondir):json_encode($default,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
 $parsed=@json_decode((string)$raw,true);
 if(!is_array($parsed)){$parsed=$default;$load_error='rules.json beschädigt – Standard geladen.';}}
 $header_line=(string)($parsed['header_line']??'');
@@ -22,8 +22,8 @@ $show_columns=is_array($parsed['show_columns']??null)?$parsed['show_columns']:[]
 $column_renames=is_array($parsed['column_renames']??null)?$parsed['column_renames']:[];
 $enable_links=!empty($parsed['enable_links']);
 $column_links=is_array($parsed['column_links']??null)?$parsed['column_links']:[];
-$csvCols=[];//$csvFile=__DIR__.'/'.$csv-reporting_csvfile;$csvCols=[];
-if(is_readable($csvFile)){$fh=@fopen($csvFile,'r');if($fh){$first=@fgetcsv($fh);@fclose($fh);if(is_array($first))$csvCols=array_map('trim',$first);}}
+$csvCols=[];//$csv-reporting_csvdir=__DIR__.'/'.$csv-reporting_csvfile;$csvCols=[];
+if(is_readable($csv-reporting_csvdir)){$fh=@fopen($csv-reporting_csvdir,'r');if($fh){$first=@fgetcsv($fh);@fclose($fh);if(is_array($first))$csvCols=array_map('trim',$first);}}
 if($header_line===''&&$csvCols)$header_line=implode(',',$csvCols);
 if(!$show_columns)$show_columns=$csvCols;
 $cols=$csvCols?:array_map('trim',explode(',',$header_line));if(!is_array($cols))$cols=[];
