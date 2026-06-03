@@ -15,8 +15,9 @@ $csvreporting_jsondir='/var/www/html/'.$csvreporting_projectpath.'/'.$csvreporti
 $csvreporting_dwlpage='http://127.0.0.1/'.$csvreporting_projectpath.'/index.php?_page='.$csvreporting_dwltype;
 $csvreporting_editorheading=$csvreporting_heading.' '.$csvreporting_editortitle;
 $csvreporting_editortitle='Rules Editor';
-///////////////////////
+
 $sharedVars=get_defined_vars();
+
 $yaml=<<<'YAML'
 license: "https://raw.githubusercontent.com/florianthepro/pages/main/LICENSE"
 blocked: "https://raw.githubusercontent.com/florianthepro/pages/main/blocked/index.html"
