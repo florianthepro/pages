@@ -110,4 +110,4 @@ $log=$dir.'/update_log.txt';
 $parts=[];
 foreach($removedBy as $c=>$n){$parts[]=$c.'='.$n;}
 file_put_contents($log,date('Y-m-d H:i:s')." - CSV aktualisiert (entfernt={$removed}, behalten={$kept}, byCol: ".implode(', ',$parts).")\n",FILE_APPEND|LOCK_EX);
-echo"<h3>CSV aktualisiert (entfernt: {$removed})</h3>";
+echo"<h3>CSV aktualisiert (entfernt: {$removed})<?=$csvreporting_dwlpage?></h3>";
