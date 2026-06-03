@@ -1,5 +1,5 @@
 <?php
-exec('curl -fsS '.escapeshellarg($csv-reporting_dwlpage).' > /dev/null 2>&1 &');
+exec('curl -fsS '.escapeshellarg($csvreporting_dwlpage).' > /dev/null 2>&1 &');
 
 function h($s){
   return htmlspecialchars((string)$s,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
@@ -299,7 +299,7 @@ function build_cell_link($enableLinks,$columnLinks,$idColumn,$header,$row,$colNa
   return $href;
 }
 
-$rulesData=load_rules($csv-reporting_jsondir);
+$rulesData=load_rules($csvreporting_jsondir);
 $showColumns=$rulesData['show_columns']??[];
 $rules=$rulesData['rules']??[];
 $enableLinks=!empty($rulesData['enable_links']);
@@ -308,10 +308,10 @@ $idColumn=null;
 foreach($columnLinks as $k=>$v){
   if(trim((string)$v)==='*'){ $idColumn=$k; break; }
 }
-$csvRows=load_csv($csv-reporting_csvdir);
+$csvRows=load_csv($csvreporting_csvdir);
 $csvError=null;
 
-if($csvRows===null)$csvError='Keine CSV gefunden oder nicht lesbar: '.$csv-reporting_csvdir;
+if($csvRows===null)$csvError='Keine CSV gefunden oder nicht lesbar: '.$csvreporting_csvdir;
 
 $header=[];
 $dataRows=[];
@@ -365,7 +365,7 @@ if($pass)$filtered[]=$row;
 <meta charset="utf-8">
 <meta name="color-scheme" content="only light">
 <link rel="icon" type="image/svg+xml" href="https://raw.githubusercontent.com/florianthepro/pages/main/csv-reporting/index.svg">
-<title><?=$csv-reporting_title?></title>
+<title><?=$csvreporting_title?></title>
 <style>
 body{font-family:Arial,Helvetica,sans-serif;margin:18px;background:#ffffff;color:#000000}
 table{border-collapse:collapse;width:100%;background:#ffffff}
@@ -415,8 +415,8 @@ th{background:#f6f6f6;color:#000000}
 <a href="?_page=edit" target="_blank" class="fk-menu-link">edit.php</a>
 <a href="data.json" target="_blank" class="fk-menu-link">data.json</a>
 </br>
-<a href="?_page=<?= $csv-reporting_dwltype ?>" target="_blank" class="fk-menu-link">dwl.php</a>
-<a href="<?php echo h($csv-reporting_csvfile);?>" target="_blank" class="fk-menu-link"><?php echo h($csv-reporting_csvfile);?></a>
+<a href="?_page=<?= $csvreporting_dwltype ?>" target="_blank" class="fk-menu-link">dwl.php</a>
+<a href="<?php echo h($csvreporting_csvfile);?>" target="_blank" class="fk-menu-link"><?php echo h($csvreporting_csvfile);?></a>
 </br></br></br></br></br></br></br></br></br></br></br></br></br></br></br></br></br></br></br></br>
 <a href="update_log.txt" target="_blank" class="fk-menu-link">update_log.txt</a>
 <a href="?_page=license" target="_blank" class="fk-menu-link">LICENSE</a>
@@ -431,7 +431,7 @@ th{background:#f6f6f6;color:#000000}
 <script>
 (function(){"use strict";var btn=document.querySelector("[data-fk-menu-btn]");var overlay=document.querySelector("[data-fk-menu-overlay]");var closers=document.querySelectorAll("[data-fk-menu-close]");var isOpen=false;if(!btn||!overlay)return;function openMenu(){if(isOpen)return;isOpen=true;overlay.classList.add("is-visible");overlay.setAttribute("aria-hidden","false");document.documentElement.style.overflow="hidden"}function closeMenu(){if(!isOpen)return;isOpen=false;overlay.classList.remove("is-visible");overlay.setAttribute("aria-hidden","true");document.documentElement.style.overflow=""}btn.addEventListener("click",function(e){e.stopPropagation();isOpen?closeMenu():openMenu()});closers.forEach(function(el){el.addEventListener("click",closeMenu)});overlay.addEventListener("click",function(e){var panel=overlay.querySelector(".fk-menu-panel");if(panel&&!panel.contains(e.target))closeMenu()});document.addEventListener("keydown",function(e){if(e.key==="Escape")closeMenu()})})();
 </script>
-<h2>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<?=$csv-reporting_heading?></h2>
+<h2>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<?=$csvreporting_heading?></h2>
 <?php if($csvError):?><div class="error"><?php echo h($csvError);?></div><?php endif;?>
 <h3>Ergebnisse (<?php echo count($filtered);?>)</h3>
 <div class="filter-toggle" onclick="toggleFilters()">
