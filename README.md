@@ -1,1 +1,1 @@
-[goto](https://github.com/florianthepro/pages/main/index/)
+[goto](https://github.com/florianthepro/pages/tree/main/index)
