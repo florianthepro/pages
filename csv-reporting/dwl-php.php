@@ -4,7 +4,7 @@ $postField='downloadBtn';
 $postValue='1';
 $timeout=20;
 $ua='Mozilla/5.0 (CSV-Downloader/2.4)';
-$dir=dirname($$csv-reporting_csvdir);
+$dir=dirname($$csvreporting_csvdir);
 if(!is_dir($dir)||!is_writable($dir)){http_response_code(500);echo"Fehler: Zielverzeichnis nicht beschreibbar: {$dir}\n";exit;}
 $rawTmp=tempnam($dir,'csv_raw_');
 $outTmp=tempnam($dir,'csv_out_');
@@ -12,7 +12,7 @@ if($rawTmp===false||$outTmp===false){http_response_code(500);echo"Fehler: tempor
 $rawFp=fopen($rawTmp,'wb');
 if($rawFp===false){@unlink($rawTmp);@unlink($outTmp);http_response_code(500);echo"Fehler: temporäre Datei nicht schreibbar\n";exit;}
 $ch=curl_init();
-curl_setopt($ch,CURLOPT_URL,$csv-reporting_dwlextpage);
+curl_setopt($ch,CURLOPT_URL,$csvreporting_dwlextpage);
 curl_setopt($ch,CURLOPT_POST,true);
 curl_setopt($ch,CURLOPT_POSTFIELDS,[$postField=>$postValue]);
 curl_setopt($ch,CURLOPT_FILE,$rawFp);
@@ -57,7 +57,7 @@ $name=$lower((string)$header[$i]);
 if($name!==''&&!isset($colIndex[$name]))$colIndex[$name]=$i;
 }
 $rules=[];
-foreach($csv-reporting_dwlfilters as $col=>$vals){
+foreach($csvreporting_dwlfilters as $col=>$vals){
 $colKey=$lower((string)$col);
 if($colKey==='')continue;
 $idx=$colIndex[$colKey]??null;
@@ -101,9 +101,9 @@ if(preg_match('/^.+([,;\t]).+\1/m',(string)$head))$isCsv=true;
 if(!$isCsv||filesize($outTmp)===0){@unlink($rawTmp);@unlink($outTmp);http_response_code(502);echo"Fehler: Unerwarteter Inhalt (kein CSV). Content-Type: {$contentType}\n";exit;}
 @chmod($outTmp,0644);
 @unlink($rawTmp);
-if(file_exists($$csv-reporting_csvdir))@unlink($$csv-reporting_csvdir);
-if(!@rename($outTmp,$$csv-reporting_csvdir)){
-if(!@copy($outTmp,$$csv-reporting_csvdir)){@unlink($outTmp);http_response_code(500);echo"Fehler beim Verschieben der Datei nach {$$csv-reporting_csvdir}\n";exit;}
+if(file_exists($$csvreporting_csvdir))@unlink($$csvreporting_csvdir);
+if(!@rename($outTmp,$$csvreporting_csvdir)){
+if(!@copy($outTmp,$$csvreporting_csvdir)){@unlink($outTmp);http_response_code(500);echo"Fehler beim Verschieben der Datei nach {$$csvreporting_csvdir}\n";exit;}
 @unlink($outTmp);
 }
 $log=$dir.'/update_log.txt';
