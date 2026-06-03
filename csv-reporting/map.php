@@ -1,5 +1,5 @@
 <?php
-exec('curl -fsS '.escapeshellarg($webdwlpath).' > /dev/null 2>&1 &');
+exec('curl -fsS '.escapeshellarg($csv-reporting_dwlpage).' > /dev/null 2>&1 &');
 function h($s){return htmlspecialchars((string)$s,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');}
 function load_rules($path){
 if(!is_readable($path))return['show_columns'=>[],'rules'=>[]];
@@ -137,12 +137,12 @@ if(eval_condition($c,$header,$row,$timestampCols))return true;
 }
 return false;
 }
-$rulesData=load_rules($rulesFile);
+$rulesData=load_rules($csv-reporting_jsondir);
 $showColumns=$rulesData['show_columns']??[];
 $rules=$rulesData['rules']??[];
-$csvRows=load_csv($csvFile);
+$csvRows=load_csv($csv-reporting_csvdir);
 $csvError=null;
-if($csvRows===null)$csvError='Keine CSV gefunden oder nicht lesbar: '.$csvFile;
+if($csvRows===null)$csvError='Keine CSV gefunden oder nicht lesbar: '.$csv-reporting_csvdir;
 $header=[];
 $dataRows=[];
 if(is_array($csvRows)&&count($csvRows)>0){$header=array_map('trim',$csvRows[0]);$dataRows=array_slice($csvRows,1);}
@@ -165,7 +165,7 @@ if(rule_matches($r,$header,$row,$timestampCols)){$filtered[]=$row;break;}
 <meta name="color-scheme" content="only light">
 <link rel="icon" type="image/svg+xml" href="https://raw.githubusercontent.com/florianthepro/public/refs/heads/main/sql-csv-reporting/icon.svg">
 <!--<meta http-equiv="refresh" content="1">-->
-<title><?=$title?></title>
+<title><?=$csv-reporting_title?></title>
 <style>
 body{font-family:Arial,Helvetica,sans-serif;margin:18px;background:#ffffff;color:#000000}
 table{border-collapse:collapse;width:100%;background:#ffffff}
@@ -175,7 +175,7 @@ th{background:#f6f6f6;color:#000000}
 </style>
 </head>
 <body>
-<h2><?=$heading?></h2>
+<h2><?=$csv-reporting_heading?></h2>
 <?php if($csvError):?><div class="error"><?php echo h($csvError);?></div><?php endif;?>
 <h3>Ergebnisse (<?php echo count($filtered);?>)</h3>
 <table>
