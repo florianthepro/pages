@@ -39,7 +39,7 @@ function h($s){return htmlspecialchars((string)$s,ENT_QUOTES|ENT_SUBSTITUTE,'UTF
 <meta charset="utf-8">
 <meta name="color-scheme" content="only light">
 <title><?=$csv-reporting_editortitle?></title>
-<link rel="icon" href="https://raw.githubusercontent.com/florianthepro/csv-reporting/refs/heads/data/rules.svg"><style>
+<link rel="icon" href="https://raw.githubusercontent.com/florianthepro/pages/main/csv-reporting/edit.svg"><style>
 body{font-family:Arial,Helvetica,sans-serif;margin:18px;background:#fff;color:#000}
 h1,h2{margin:0 0 8px 0}
 section{margin-top:18px}
