@@ -10,27 +10,21 @@ if(!isset($data['show_columns'])||!is_array($data['show_columns']))$data['show_c
 if(!isset($data['rules'])||!is_array($data['rules']))$data['rules']=[];
 if(!isset($data['enable_links']))$data['enable_links']=false;
 if(!isset($data['column_links'])||!is_array($data['column_links']))$data['column_links']=[];
-return $data;
-}
+return $data;}
 function parse_csv_string($csvContent){
 $lines=preg_split("/\r\n|\n|\r/",$csvContent);
 $rows=[];
 foreach($lines as $line){
 if($line==='')continue;
-$rows[]=str_getcsv($line);
-}
-return $rows;
-}
+$rows[]=str_getcsv($line);}
+return $rows;}
 function load_csv($path){
 if(!is_readable($path))return null;
-return parse_csv_string(file_get_contents($path));
-}
+return parse_csv_string(file_get_contents($path));}
 function col_index($header,$colName){
 foreach($header as $i=>$h){
-if(strcasecmp(trim($h),trim($colName))===0)return $i;
-}
-return null;
-}
+if(strcasecmp(trim($h),trim($colName))===0)return $i;}
+return null;}
 function timestamp_to_minutes($timestamp){
 $pattern='/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}$/';
 if(!preg_match($pattern,trim($timestamp)))return null;
@@ -38,8 +32,7 @@ $ts=strtotime(trim($timestamp));
 if($ts===false)return null;
 $now=time();
 $diff=($ts-$now)/60;
-return round($diff,2);
-}
+return round($diff,2);}
 function is_timestamp_column($header,$dataRows,$colName){
 $idx=col_index($header,$colName);
 if($idx===null)return false;
