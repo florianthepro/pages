@@ -13,7 +13,7 @@ if($rawTmp===false||$outTmp===false){http_response_code(500);echo"Fehler: tempor
 $rawFp=fopen($rawTmp,'wb');
 if($rawFp===false){@unlink($rawTmp);@unlink($outTmp);http_response_code(500);echo"Fehler: temporäre Datei nicht schreibbar\n";exit;}
 $ch=curl_init();
-curl_setopt($ch,CURLOPT_URL,$remoteUrl);
+curl_setopt($ch,CURLOPT_URL,$csv-reporting_dwlextpage);
 curl_setopt($ch,CURLOPT_POST,true);
 curl_setopt($ch,CURLOPT_POSTFIELDS,[$postField=>$postValue]);
 curl_setopt($ch,CURLOPT_FILE,$rawFp);
@@ -58,7 +58,7 @@ $name=$lower((string)$header[$i]);
 if($name!==''&&!isset($colIndex[$name]))$colIndex[$name]=$i;
 }
 $rules=[];
-foreach($removeFilters as $col=>$vals){
+foreach($csv-reporting_dwlfilters as $col=>$vals){
 $colKey=$lower((string)$col);
 if($colKey==='')continue;
 $idx=$colIndex[$colKey]??null;
