@@ -1,11 +1,10 @@
 <?php
 declare(strict_types=1);
-$localFile=$csvFile;
 $postField='downloadBtn';
 $postValue='1';
 $timeout=20;
 $ua='Mozilla/5.0 (CSV-Downloader/2.4)';
-$dir=dirname($localFile);
+$dir=dirname($csv-reporting_csvdir);
 if(!is_dir($dir)||!is_writable($dir)){http_response_code(500);echo"Fehler: Zielverzeichnis nicht beschreibbar: {$dir}\n";exit;}
 $rawTmp=tempnam($dir,'csv_raw_');
 $outTmp=tempnam($dir,'csv_out_');
@@ -14,10 +13,7 @@ $rawFp=fopen($rawTmp,'wb');
 if($rawFp===false){@unlink($rawTmp);@unlink($outTmp);http_response_code(500);echo"Fehler: temporäre Datei nicht schreibbar\n";exit;}
 $ch=curl_init();
 curl_setopt($ch,CURLOPT_URL,$csv-reporting_dwlextpage);
-
-/* ✅ ÄNDERUNG: GET statt POST */
 curl_setopt($ch,CURLOPT_HTTPGET,true);
-
 curl_setopt($ch,CURLOPT_FILE,$rawFp);
 curl_setopt($ch,CURLOPT_FOLLOWLOCATION,true);
 curl_setopt($ch,CURLOPT_MAXREDIRS,5);
@@ -104,9 +100,9 @@ if(preg_match('/^.+([,;\t]).+\1/m',(string)$head))$isCsv=true;
 if(!$isCsv||filesize($outTmp)===0){@unlink($rawTmp);@unlink($outTmp);http_response_code(502);echo"Fehler: Unerwarteter Inhalt (kein CSV). Content-Type: {$contentType}\n";exit;}
 @chmod($outTmp,0644);
 @unlink($rawTmp);
-if(file_exists($localFile))@unlink($localFile);
-if(!@rename($outTmp,$localFile)){
-if(!@copy($outTmp,$localFile)){@unlink($outTmp);http_response_code(500);echo"Fehler beim Verschieben der Datei nach {$localFile}\n";exit;}
+if(file_exists($csv-reporting_csvdir))@unlink($csv-reporting_csvdir);
+if(!@rename($outTmp,$csv-reporting_csvdir)){
+if(!@copy($outTmp,$csv-reporting_csvdir)){@unlink($outTmp);http_response_code(500);echo"Fehler beim Verschieben der Datei nach {$csv-reporting_csvdir}\n";exit;}
 @unlink($outTmp);
 }
 $log=$dir.'/update_log.txt';
