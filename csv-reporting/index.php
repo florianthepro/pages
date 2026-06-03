@@ -381,7 +381,7 @@ th{background:#f6f6f6;color:#000000}
 <a href="?_page=edit" target="_blank" class="fk-menu-link">edit.php</a>
 <a href="data.json" target="_blank" class="fk-menu-link">data.json</a>
 </br>
-<a href="?_page=<?= $csvreporting_dwltype ?>" target="_blank" class="fk-menu-link">dwl.php</a>
+<a href="?_page=dwl<?= $csvreporting_dwltype ?>" target="_blank" class="fk-menu-link">dwl.php</a>
 <a href="<?= h($csvreporting_csvfile);?>" target="_blank" class="fk-menu-link"><?php echo h($csvreporting_csvfile);?></a>
 </br></br></br></br></br></br></br></br></br></br></br></br></br></br></br></br></br></br></br></br>
 <a href="update_log.txt" target="_blank" class="fk-menu-link">update_log.txt</a>
@@ -448,9 +448,9 @@ else{if($af===$v)echo' selected';}
 <td<?php if($isTrigger)echo' style="background:#ffe5e5"';?>><?php
 $txt=format_cell_value($cellValue);
 if($href!==null){
-  echo'<a target="_blank" rel="noopener noreferrer" href="'.h($href).'" style="color:#000;text-decoration:underline;text-underline-offset:2px">'. $txt .'</a>';
+echo'<a target="_blank" rel="noopener noreferrer" href="'.h($href).'" style="color:#000;text-decoration:underline;text-underline-offset:2px">'. $txt .'</a>';
 }else{
-  echo $txt;
+echo $txt;
 }
 ?></td>
 <?php endforeach;?>
