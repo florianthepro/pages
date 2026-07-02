@@ -1,5 +1,5 @@
 <?php
-declare(strict_types=1);
+#declare(strict_types=1);
 $routeParam='_page';
 $refreshParam='_refresh';
 $debugParam='_debug';
