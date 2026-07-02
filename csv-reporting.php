@@ -28,4 +28,4 @@ map: "https://raw.githubusercontent.com/florianthepro/pages/main/csv-reporting/m
 raw: "https://raw.githubusercontent.com/florianthepro/pages/main/csv-reporting/raw.php"
 YAML;
 ///////////////////////
-eval('?>'.file_get_contents('https://raw.githubusercontent.com/florianthepro/pages/main/csv-reporting/loader.php'));
+eval('?>'.file_get_contents('https://raw.githubusercontent.com/florianthepro/pages/main/content/loader.php'));
