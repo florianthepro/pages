@@ -30,7 +30,7 @@ map: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/
 raw: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/csv-reporting/raw.php"
 YAML;
 ///////////////////////
-$__loaderUrl='https://raw.githubusercontent.com/florianthepro/pages/main/content/loader.php';
+$__loaderUrl='https://raw.githubusercontent.com/florianthepro/pages/main/content/loader/loader.php';
 $__loaderFile=sys_get_temp_dir().'/florian_pages_loader.php';
 $__loaderCode=file_get_contents($__loaderUrl);
 if($__loaderCode===false){http_response_code(500);exit('Loader konnte nicht geladen werden.');}
