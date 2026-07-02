@@ -19,7 +19,7 @@ $sharedVars=get_defined_vars();
 
 $yaml=<<<'YAML'
 license: "https://raw.githubusercontent.com/florianthepro/pages/main/LICENSE"
-blocked: "https://raw.githubusercontent.com/florianthepro/pages/main/blocked/index.html"
+blocked: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/blocked/index.html"
 index: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/csv-reporting/index.php"
 edit: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/csv-reporting/edit.php"
 dwlphp: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/csv-reporting/dwlphp.php"
