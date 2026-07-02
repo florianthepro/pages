@@ -20,12 +20,12 @@ $sharedVars=get_defined_vars();
 $yaml=<<<'YAML'
 license: "https://raw.githubusercontent.com/florianthepro/pages/main/LICENSE"
 blocked: "https://raw.githubusercontent.com/florianthepro/pages/main/blocked/index.html"
-index: "https://raw.githubusercontent.com/florianthepro/pages/main/csv-reporting/index.php"
-edit: "https://raw.githubusercontent.com/florianthepro/pages/main/csv-reporting/edit.php"
-dwlphp: "https://raw.githubusercontent.com/florianthepro/pages/main/csv-reporting/dwlphp.php"
-dwlcsv: "https://raw.githubusercontent.com/florianthepro/pages/main/csv-reporting/dwlcsv.php"
-map: "https://raw.githubusercontent.com/florianthepro/pages/main/csv-reporting/map.php"
-raw: "https://raw.githubusercontent.com/florianthepro/pages/main/csv-reporting/raw.php"
+index: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/csv-reporting/index.php"
+edit: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/csv-reporting/edit.php"
+dwlphp: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/csv-reporting/dwlphp.php"
+dwlcsv: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/csv-reporting/dwlcsv.php"
+map: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/csv-reporting/map.php"
+raw: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/csv-reporting/raw.php"
 YAML;
 ///////////////////////
 $__loaderUrl='https://raw.githubusercontent.com/florianthepro/pages/main/content/loader.php';
