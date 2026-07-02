@@ -4,7 +4,7 @@ declare(strict_types=1);
 $side = "https://example.com";
 
 $yaml=<<<'YAML'
-index: "https://raw.githubusercontent.com/florianthepro/pages/main/csv-reporting/index.php"
+index: "https://raw.githubusercontent.com/florianthepro/pages/main/iframe-site-viewer/index.php"
 YAML;
 ///////////////////////
 $routeParam='_page';
