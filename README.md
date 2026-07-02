@@ -1,4 +1,4 @@
-### Projekte: [index](https://github.com/florianthepro/pages/tree/main/index)
+### Projekte-[index](https://github.com/florianthepro/pages/tree/main/content/instances)
 
 #### je nach projekt webserver beschreibar machen:
 
