@@ -1,5 +1,5 @@
 <?php
-$side = "https://example.com";
+#$side = "https://example.com";
 
 if (!filter_var($side, FILTER_VALIDATE_URL)) {
     http_response_code(400);
