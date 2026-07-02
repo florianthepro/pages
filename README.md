@@ -9,4 +9,4 @@ RHEL/CentOS (apache):
 sudo bash -c 'WEBROOT=/var/www/html; USER=apache; sudo chown -R $USER:$USER "$WEBROOT" && sudo chmod -R u+rwX,g+rwX,o-rwx "$WEBROOT"'
 ```
 
-[goto](https://github.com/florianthepro/pages/tree/main/index)
+Projekte [index](https://github.com/florianthepro/pages/tree/main/index)
