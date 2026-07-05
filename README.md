@@ -20,5 +20,5 @@ apache testing (ps tmp):
 powershell -NoProfile -ExecutionPolicy Bypass -Command "iex (irm 'https://raw.githubusercontent.com/florianthepro/pages/main/content/loader/start_apache_temp.bat')"
 ```
 ```
-curl -sS -o "%TEMP%\tmp_start.bat" "https://raw.githubusercontent.com/florianthepro/pages/main/content/loader/start_apache_temp.bat" && cmd /c "%TEMP%\tmp_start.bat"
+curl -sS -o "%TEMP%\tmp_start.bat" "https://raw.githubusercontent.com/florianthepro/pages/main/content/loader/tmp-apache.bat" && cmd /c "%TEMP%\tmp_start.bat"
 ```
