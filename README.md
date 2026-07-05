@@ -15,7 +15,7 @@ sudo bash -c 'WEBROOT=/var/www/html; USER=apache; sudo chown -R $USER:$USER "$WE
 
 ---
 
-apache testing temp:
+apache testing (ps tmp):
 ```
 powershell -NoProfile -ExecutionPolicy Bypass -Command "iex (irm 'https://raw.githubusercontent.com/florianthepro/pages/main/content/loader/start_apache_temp.bat')"
 ```
