@@ -163,7 +163,7 @@ if(rule_matches($r,$header,$row,$timestampCols)){$filtered[]=$row;break;}
 <head>
 <meta charset="utf-8">
 <meta name="color-scheme" content="only light">
-<link rel="icon" type="image/svg+xml" href="https://raw.githubusercontent.com/florianthepro/public/refs/heads/main/sql-csv-reporting/icon.svg">
+<link rel="icon" type="image/svg+xml" href="<?=$csvreporting_icon?>">
 <!--<meta http-equiv="refresh" content="1">-->
 <title><?=$csvreporting_title?></title>
 <style>
