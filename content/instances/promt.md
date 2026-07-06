@@ -1018,3 +1018,4 @@ YAML;
 ```
 genutzwerden
 mache keine weiteren änderungen und gebe mir die neue index.php
+die yaml variable 1:1 wie in meinem beispiel
