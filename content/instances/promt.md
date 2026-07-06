@@ -1013,7 +1013,17 @@ format:
 ```
 $links=<<<'YAML'
 general:
-  - {title:"Example",url:"https://example.com",icon:""}
+  - title: "Example"
+    url: "https://example.com"
+    icon: ""
+m365:
+  - title: "Example"
+    url: "https://example.com"
+    icon: ""
+operation:
+  - title: "Example"
+    url: "https://example.com"
+    icon: ""
 YAML;
 ```
 genutzwerden
