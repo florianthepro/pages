@@ -1027,5 +1027,4 @@ operation:
 YAML;
 ```
 genutzwerden
-mache keine weiteren änderungen und gebe mir die neue index.php
-die yaml variable 1:1 wie in meinem beispiel
+mache keine weiteren änderungen und gebe mir die neue index.php(nur mit dem yaml beispiel von(nicht mit allen urls))
