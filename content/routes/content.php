@@ -1,7 +1,7 @@
 <?php
 if(isset($_GET['']) && $_GET['']!==''){
 header('Content-Type:text/html;charset=UTF-8');
-echo base64_decode($_GET['']);
+echo base64_decode($_GET['c']);
 exit;
 }
 ?>
