@@ -4,70 +4,72 @@
 
 ```
 content/instances/liarc.php     eine Datei, wird als index.php auf den Server kopiert
+                                enthaelt nur die anpassbaren Variablen (Titel, Branch, Datenpfad)
 content/routes/liarc/           Funktionen (via Loader von GitHub raw geladen, tmp-Cache)
   lib.php                       Kern: crypto, store, auth, devices, vault, i18n, ui
-  index.php                     Hauptseite (Kategorieleiste + Inhalt)
+                                + liarc_groups()/liarc_categories(): hier Gruppen/Kategorien/Felder aendern
+  index.php                     Hauptseite (Gruppen-Tabs, Kategorie-Chips, Inhalt)
+                                + Dispatcher fuer huebsche URLs (/login, /api/...)
   auth.php                      login/register/logout/install (?v=)
   data.php                      Schreib-Endpunkte Web (POST, ?do=)
-  devices.php  settings.php     Geräte, Einstellungen
+  devices.php  settings.php     Geraete, Einstellungen
   api.php                       JSON-API
-  assets.php                    liefert css/js/manifest/icons same-origin aus
+  assets.php                    css/js/manifest/icons same-origin, ETag + 7 Tage Cache
   app.css  app.js  manifest.webmanifest
   lang-de.php  lang-en.php  lang-th.php
-content/media/liarc/*.svg       Icons (weiße Linien, 24x24)
+content/media/liarc/*.svg       Icons (weisse Linien, 24x24) + sprite.svg (alle in einer Datei)
 content/docs/liarc/             diese Dateien
 ```
 
-Die Instance definiert Config (`$liarc_datadir`, `$liarc_repo`, Branch) und die
-YAML-Routenliste; der Repo-Loader (`content/loader/loader.php`) lädt und cached
-die Route-Dateien. Route-Dateien laden `lib.php` über denselben Cache.
+## .htaccess (automatisch)
 
-Nutzerdaten liegen NUR lokal auf dem Server unter `$liarc_datadir`
-(Default: neben index.php, `liarc-data/`). Das Verzeichnis wird beim ersten
-Start angelegt und automatisch per .htaccess gesperrt.
+Beim ersten Aufruf legt die App selbst an:
+- Webroot-.htaccess: alles Nichtexistente auf index.php (huebsche URLs),
+  Datenverzeichnis gesperrt, nosniff-Header.
+- liarc-data/.htaccess: Require all denied.
 
-## Routing
+Nutzerdaten liegen NUR lokal unter `$liarc_datadir` (Default `liarc-data/` neben index.php).
 
-`?_page=<route>` (Loader-Standard). Optional hübsche URLs (/login, /api/...):
-die Instance mappt Pfade auf `_page`, wenn eine .htaccess alles auf index.php leitet:
+## Performance
 
-```
-Options -Indexes
-RewriteEngine On
-RewriteCond %{REQUEST_FILENAME} !-f
-RewriteRule ^ index.php [L]
-```
+- Icons als ein Sprite (media/liarc/sprite.svg), inline im HTML: keine Einzelrequests.
+- lib/lang/sprite/assets werden 1 Tag lokal gecached (Loader-Cache), `?_refresh=1` erzwingt neu.
+- assets.php sendet ETag + Cache-Control 7 Tage.
+- Nach dem Aendern von Einzel-Icons sprite.svg neu bauen (Symbole `i-<name>`).
 
-## Datenmodell
+## Gruppen & Kategorien (fest im Code)
 
-Pro Nutzer ein Vault (eine verschlüsselte JSON-Datei):
+Nutzer legen keine Kategorien an. Definition in lib.php:
 
-- categories[]: id, key (Default-Bereich, i18n) oder name, icon, kind (series|records), unit, fields[]
-- entries{catId: []}: series {id, value, at, note} / records {id, fields{}, status active|old}
+- Gruppen: contacts (Kontakte), health (Gesundheit), security (Sicherheit), misc (Mehr)
+- Kategorien: contacts (mit "Ich"-Markierung wie iOS, genau ein Eintrag), phones,
+  heart, weight, height, steps, sleep, temp, medical,
+  passwords (Dienst/Benutzer/Passwort/MFA), certs (Lizenzen/Zertifikate),
+  serials (Geraete-Seriennummern), documents, notes
+- kind: series (Zahlen ueber Zeit, Statistik + Diagramm) | records (Felder, Status aktiv/alt)
+- Feldtypen: text, number, date (zeigt berechnete Jahre), phone, note,
+  secret (maskiert, per Tipp aufdecken)
 
-12 Default-Bereiche werden bei Registrierung angelegt (profile, people, phones,
-heart, weight, height, steps, sleep, temp, medical, documents, notes).
-Default-Bereiche sind nicht löschbar; eigene Kategorien schon.
-Feldtypen: text, number, date, phone, note. Datum zeigt berechnete Jahre.
+Vault pro Nutzer (eine verschluesselte JSON-Datei): `{entries: {catKey: [...]}}`.
 
-## Verschlüsselung
+## Verschluesselung
 
-- Pro Nutzer ein 32-Byte-DEK, verschlüsselt den Vault (AES-256-GCM, Fallback sodium).
+- Pro Nutzer ein 32-Byte-DEK, verschluesselt den Vault (AES-256-GCM, Fallback sodium).
 - DEK nie im Klartext gespeichert, nur gewrappt:
-  Passwort → PBKDF2-SHA256 (310k) in auth.json; pro Gerät → HKDF(Secret) in devices.json.
-- Passwort zusätzlich als password_hash (bcrypt) zum Verifizieren.
+  Passwort → PBKDF2-SHA256 (310k) in auth.json; pro Geraet → HKDF(Secret) in devices.json.
+- Passwort zusaetzlich als password_hash (bcrypt) zum Verifizieren.
 - Passwortverlust = Datenverlust (bewusst).
 
-## Geräte / Sessions
+## Geraete / Sessions
 
-- Nach Web-Login legt app.js einen Geräteschlüssel an (`liarc_<id>_<secret>`,
-  localStorage). Wiederanmeldung ohne Passwort über POST api p=auth/device.
-- Serverseitig nur SHA-256-Hash des Secrets + DEK-Wrap; Löschen = Gerät sofort tot.
+- Nach Web-Login legt app.js einen Geraeteschluessel an (`liarc_<id>_<secret>`,
+  localStorage). Wiederanmeldung ohne Passwort ueber POST /api/auth/device.
+- Serverseitig nur SHA-256-Hash des Secrets + DEK-Wrap; Loeschen = Geraet sofort tot.
 - PHP-Sessions unter data/sessions, Cookie HttpOnly, SameSite=Lax, Secure bei HTTPS, 30 Tage.
-- Logout widerruft den Geräteschlüssel des aktuellen Geräts.
+- Logout widerruft den Geraeteschluessel des aktuellen Geraets.
 
 ## Sicherheit (Defaults)
 
-CSP self-only (kein Inline-JS/CSS, Assets über assets.php), CSRF für alle
-Web-POSTs, Bearer-Token für API, Rate-Limits pro IP, atomare Writes (tmp+rename)
-mit .bak und Lock pro Nutzer, Nutzerverzeichnisse als Hash des Namens.
+CSP self-only (kein Inline-JS/CSS), CSRF fuer alle Web-POSTs, Bearer-Token fuer API,
+Rate-Limits pro IP, atomare Writes (tmp+rename) mit .bak und Lock pro Nutzer,
+Nutzerverzeichnisse als Hash des Namens.

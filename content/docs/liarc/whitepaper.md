@@ -3,10 +3,12 @@
 ## Was ist LIARC
 
 LIARC (LIfe ARChive, liarc.org) ist eine persönliche, verschlüsselte Lebensdatenbank
-mit Webinterface und API. Ein Nutzer erfasst alle Werte seines Lebens: Profil,
-Menschen, Telefonnummern, Herzfrequenz, Gewicht, Größe, Schritte, Schlaf,
-Temperatur, Medizinisches, Dokumente, Notizen – alle Bereiche sind von Anfang an
-da, niemand muss erst Kategorien anlegen.
+mit Webinterface und API. Ein Nutzer erfasst alle Werte seines Lebens in festen
+Gruppen: Kontakte (ein Kontakt ist als „Ich" markierbar, wie iOS), Gesundheit
+(Herz, Gewicht, Größe, Schritte, Schlaf, Temperatur, Medizin), Sicherheit
+(Passwörter, MFA, Lizenzen/Zertifikate, Geräte-Seriennummern) und Mehr
+(Dokumente, Notizen). Alles ist von Anfang an da – Nutzer legen keine
+Kategorien an; angepasst wird zentral im Code (lib.php).
 
 Frühere Arbeitsnamen: DSL (dynamic-secure-life), dann LIA (Domain nicht frei).
 
@@ -28,9 +30,10 @@ Paperless (dokumentenzentriert, schwerer Stack), Nextcloud (Dateien, Mehrbenutze
 Grocy u.ä. (domänenspezifisch) passen nicht. Daraus abgeleitet:
 
 1. Läuft auf jedem Apache+PHP-Hosting, keine Pakete, keine Datenbank.
-2. Alle Lebensbereiche vorkonfiguriert, eigene Kategorien optional.
+2. Alle Lebensbereiche fest vorkonfiguriert, Anpassung nur zentral im Code.
 3. Verschlüsselung als Default, keine Konfiguration.
-4. Deployment = eine Datei kopieren (Instance-Format des Repos).
+4. Deployment = eine Datei kopieren (Instance-Format des Repos); .htaccess
+   fuer Routing und Datenschutz legt die App selbst an.
 5. API von Anfang an.
 6. Mehrsprachig (de, en, th), Sprachen als separate Dateien.
 

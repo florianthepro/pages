@@ -27,18 +27,19 @@ GET    /api/me
 GET    /api/devices
 DELETE /api/devices/{id}
 
-GET    /api/categories                          inkl. Statistik
-POST   /api/categories                          {"name","kind":"series|records","unit","fields":[{"label","type"}]}
-GET    /api/categories/{id}
-DELETE /api/categories/{id}                     nur eigene Kategorien (Defaults: 403)
-GET    /api/categories/{id}/stats               bei series inkl. points
-GET    /api/categories/{id}/entries
-POST   /api/categories/{id}/entries             series {"value","at?","note?"} / records {"fields":{k:v}}
-PATCH  /api/categories/{id}/entries/{eid}       {"status":"active|old"} / {"note"}
-DELETE /api/categories/{id}/entries/{eid}
+GET    /api/groups                              Gruppen mit Kategorie-Keys
+GET    /api/categories                          inkl. Statistik (Keys fest: contacts, phones,
+                                                heart, weight, height, steps, sleep, temp,
+                                                medical, passwords, certs, serials, documents, notes)
+GET    /api/categories/{key}
+GET    /api/categories/{key}/stats              bei series inkl. points
+GET    /api/categories/{key}/entries
+POST   /api/categories/{key}/entries            series {"value","at?","note?"} / records {"fields":{k:v}}
+PATCH  /api/categories/{key}/entries/{eid}      {"status":"active|old"} / {"note"} / {"me":true}
+DELETE /api/categories/{key}/entries/{eid}
 ```
 
-Feldtypen: text, number, date (YYYY-MM-DD), phone, note.
+Feldtypen: text, number, date (YYYY-MM-DD), phone, note, secret.
 `at`: Unix-Timestamp oder strtotime-String.
 
 ## Beispiel

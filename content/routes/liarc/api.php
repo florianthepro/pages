@@ -2,7 +2,7 @@
 declare(strict_types=1);
 if (!defined('LIARC_LIB')) {
     require function_exists('app_get_local_script')
-        ? app_get_local_script(($liarc_repo ?? 'https://raw.githubusercontent.com/florianthepro/pages/main/content').'/routes/liarc/lib.php', isset($_GET['_refresh']) && $_GET['_refresh'] === '1', 300)
+        ? app_get_local_script(($liarc_repo ?? 'https://raw.githubusercontent.com/florianthepro/pages/main/content').'/routes/liarc/lib.php', isset($_GET['_refresh']) && $_GET['_refresh'] === '1', 86400)
         : __DIR__.'/lib.php';
 }
 liarc_boot(get_defined_vars());
@@ -11,7 +11,7 @@ liarc_boot(get_defined_vars());
 // Auth: Authorization: Bearer liarc_<id>_<secret> + X-LIARC-User: <username>
 $path = '/'.trim((string)($_GET['p'] ?? ''), '/');
 if (str_starts_with($path, '/api/') || $path === '/api') $path = substr($path, 4);
-if ($path === '' ) $path = '/';
+if ($path === '') $path = '/';
 $method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
 $in = liarc_input();
 
@@ -50,48 +50,37 @@ if (preg_match('#^/devices/([A-Za-z0-9_-]+)$#', $path, $m) && $method === 'DELET
 $vault = liarc_vault_load($user['uid'], $user['dek']);
 if ($vault === null) liarc_json_error('vault_unreadable', 500);
 
-$catOut = function (array $cat) use ($vault) {
+$catOut = function (string $key) use ($vault) {
+    $cat = liarc_category($key);
     $cat['name'] = liarc_cat_name($cat);
-    return $cat + ['stats' => liarc_category_stats($cat, $vault['entries'][$cat['id']] ?? [])];
+    $cat['group'] = liarc_group_of($key);
+    return $cat + ['stats' => liarc_category_stats($cat, $vault['entries'][$key] ?? [])];
 };
+
+if ($path === '/groups' && $method === 'GET') {
+    liarc_i18n_init();
+    $out = [];
+    foreach (liarc_groups() as $g => $gd) {
+        $out[] = ['key' => $g, 'name' => t('g.'.$g), 'icon' => $gd['icon'], 'categories' => $gd['cats']];
+    }
+    liarc_json(['ok' => true, 'groups' => $out]);
+}
 
 if ($path === '/categories' && $method === 'GET') {
     liarc_i18n_init();
-    liarc_json(['ok' => true, 'categories' => array_map($catOut, $vault['categories'])]);
+    liarc_json(['ok' => true, 'categories' => array_map($catOut, array_keys(liarc_categories()))]);
 }
 
-if ($path === '/categories' && $method === 'POST') {
-    $res = liarc_category_normalize($in);
-    if (isset($res['error'])) liarc_json_error($res['error'], 422);
-    $lock = liarc_user_lock($user['uid']);
-    $vault = liarc_vault_load($user['uid'], $user['dek']);
-    $vault['categories'][] = $res['category'];
-    liarc_vault_save($user['uid'], $user['dek'], $vault);
-    liarc_user_unlock($lock);
-    liarc_json(['ok' => true, 'category' => $res['category']], 201);
-}
-
-if (preg_match('#^/categories/([A-Za-z0-9_-]+)(/.*)?$#', $path, $m)) {
-    $catId = $m[1];
+if (preg_match('#^/categories/([a-z0-9_-]+)(/.*)?$#', $path, $m)) {
+    $catKey = $m[1];
     $sub = $m[2] ?? '';
-    $cat = liarc_category_get($vault, $catId);
+    $cat = liarc_category($catKey);
     if ($cat === null) liarc_json_error('category_not_found', 404);
-    $entries = $vault['entries'][$catId] ?? [];
+    $entries = $vault['entries'][$catKey] ?? [];
 
     if ($sub === '' && $method === 'GET') {
         liarc_i18n_init();
-        liarc_json(['ok' => true, 'category' => $catOut($cat)]);
-    }
-
-    if ($sub === '' && $method === 'DELETE') {
-        if (($cat['key'] ?? null) !== null) liarc_json_error('default_category', 403);
-        $lock = liarc_user_lock($user['uid']);
-        $vault = liarc_vault_load($user['uid'], $user['dek']);
-        $vault['categories'] = array_values(array_filter($vault['categories'], fn($c) => $c['id'] !== $catId));
-        unset($vault['entries'][$catId]);
-        liarc_vault_save($user['uid'], $user['dek'], $vault);
-        liarc_user_unlock($lock);
-        liarc_json(['ok' => true]);
+        liarc_json(['ok' => true, 'category' => $catOut($catKey)]);
     }
 
     if ($sub === '/stats' && $method === 'GET') {
@@ -109,7 +98,7 @@ if (preg_match('#^/categories/([A-Za-z0-9_-]+)(/.*)?$#', $path, $m)) {
         if (isset($res['error'])) liarc_json_error($res['error'], 422);
         $lock = liarc_user_lock($user['uid']);
         $vault = liarc_vault_load($user['uid'], $user['dek']);
-        $vault['entries'][$catId][] = $res['entry'];
+        $vault['entries'][$catKey][] = $res['entry'];
         liarc_vault_save($user['uid'], $user['dek'], $vault);
         liarc_user_unlock($lock);
         liarc_json(['ok' => true, 'entry' => $res['entry']], 201);
@@ -121,16 +110,21 @@ if (preg_match('#^/categories/([A-Za-z0-9_-]+)(/.*)?$#', $path, $m)) {
             $lock = liarc_user_lock($user['uid']);
             $vault = liarc_vault_load($user['uid'], $user['dek']);
             $found = false;
-            foreach ($vault['entries'][$catId] ?? [] as &$e) {
-                if ($e['id'] === $entryId) {
-                    if (isset($in['status']) && in_array($in['status'], ['active', 'old'], true)) $e['status'] = $in['status'];
-                    if (isset($in['note'])) $e['note'] = liarc_cut((string)$in['note'], 200);
-                    $e['updated'] = liarc_now();
-                    $found = true;
-                    break;
-                }
+            if (!empty($in['me'])) {
+                $found = liarc_entry_set_me($vault, $catKey, $entryId);
             }
-            unset($e);
+            if (isset($vault['entries'][$catKey])) {
+                foreach ($vault['entries'][$catKey] as &$e) {
+                    if ($e['id'] === $entryId) {
+                        if (isset($in['status']) && in_array($in['status'], ['active', 'old'], true)) $e['status'] = $in['status'];
+                        if (isset($in['note'])) $e['note'] = liarc_cut((string)$in['note'], 200);
+                        $e['updated'] = liarc_now();
+                        $found = true;
+                        break;
+                    }
+                }
+                unset($e);
+            }
             if ($found) liarc_vault_save($user['uid'], $user['dek'], $vault);
             liarc_user_unlock($lock);
             $found ? liarc_json(['ok' => true]) : liarc_json_error('entry_not_found', 404);
@@ -138,11 +132,11 @@ if (preg_match('#^/categories/([A-Za-z0-9_-]+)(/.*)?$#', $path, $m)) {
         if ($method === 'DELETE') {
             $lock = liarc_user_lock($user['uid']);
             $vault = liarc_vault_load($user['uid'], $user['dek']);
-            $before = count($vault['entries'][$catId] ?? []);
-            $vault['entries'][$catId] = array_values(array_filter(
-                $vault['entries'][$catId] ?? [], fn($e) => $e['id'] !== $entryId
+            $before = count($vault['entries'][$catKey] ?? []);
+            $vault['entries'][$catKey] = array_values(array_filter(
+                $vault['entries'][$catKey] ?? [], fn($e) => $e['id'] !== $entryId
             ));
-            $found = count($vault['entries'][$catId]) < $before;
+            $found = count($vault['entries'][$catKey]) < $before;
             if ($found) liarc_vault_save($user['uid'], $user['dek'], $vault);
             liarc_user_unlock($lock);
             $found ? liarc_json(['ok' => true]) : liarc_json_error('entry_not_found', 404);

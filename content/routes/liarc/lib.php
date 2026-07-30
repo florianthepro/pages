@@ -12,9 +12,10 @@ const LIARC_SESSION_LIFETIME = 2592000;
 const LIARC_TOKEN_PREFIX = 'liarc_';
 const LIARC_LOGIN_MAX_TRIES = 8;
 const LIARC_LOGIN_WINDOW = 900;
-const LIARC_FIELD_TYPES = ['text', 'number', 'date', 'phone', 'note'];
+const LIARC_CACHE_TTL = 86400; // lib/lang/assets: 1 Tag, ?_refresh=1 erzwingt Neuladen
 
 function liarc_boot(array $vars): void {
+    if (isset($GLOBALS['LIARC'])) return;
     $GLOBALS['LIARC'] = [
         'title' => (string)($vars['liarc_title'] ?? 'LIARC'),
         'repo' => (string)($vars['liarc_repo'] ?? 'https://raw.githubusercontent.com/florianthepro/pages/main/content'),
@@ -25,18 +26,57 @@ function liarc_boot(array $vars): void {
         exit('LIARC requires the PHP openssl or sodium extension.');
     }
     liarc_store_init();
+    liarc_webroot_htaccess();
 }
 
 function liarc_cfg(string $k): string { return $GLOBALS['LIARC'][$k]; }
 function liarc_refresh(): bool { return isset($_GET['_refresh']) && $_GET['_refresh'] === '1'; }
 
 // Repo-Datei als lokalen Pfad (Loader-Cache; lokale Entwicklung: direkt aus dem Repo)
-function liarc_repo_file(string $rel): ?string {
+function liarc_repo_file(string $rel, int $ttl = LIARC_CACHE_TTL): ?string {
     if (function_exists('app_get_local_script')) {
-        return app_get_local_script(liarc_cfg('repo').'/'.$rel, liarc_refresh(), 300);
+        return app_get_local_script(liarc_cfg('repo').'/'.$rel, liarc_refresh(), $ttl);
     }
     $p = dirname(__DIR__, 2).'/'.$rel;
     return is_file($p) ? $p : null;
+}
+
+// Webroot-.htaccess automatisch anlegen: huebsche URLs + Datenverzeichnis sperren
+function liarc_webroot_htaccess(): void {
+    $root = dirname($_SERVER['SCRIPT_FILENAME'] ?? '');
+    if ($root === '' || !is_dir($root) || is_file($root.'/.htaccess') || !is_writable($root)) return;
+    $data = preg_quote(basename(liarc_cfg('data')), '#');
+    @file_put_contents($root.'/.htaccess',
+        "Options -Indexes\n"
+        ."<IfModule mod_rewrite.c>\n"
+        ."RewriteEngine On\n"
+        ."RewriteRule ^{$data}(/|$) - [F,L]\n"
+        ."RewriteCond %{REQUEST_FILENAME} !-f\n"
+        ."RewriteCond %{REQUEST_FILENAME} !-d\n"
+        ."RewriteRule ^ index.php [L]\n"
+        ."</IfModule>\n"
+        ."<IfModule mod_headers.c>\n"
+        ."Header set X-Content-Type-Options \"nosniff\"\n"
+        ."</IfModule>\n");
+}
+
+// huebsche URL (/login, /api/...) -> Route; index.php nutzt das als Dispatcher
+function liarc_pretty_route(): ?array {
+    $p = trim((string)parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH), '/');
+    $b = trim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
+    if ($b !== '' && str_starts_with($p, $b)) $p = trim(substr($p, strlen($b)), '/');
+    if ($p === '' || $p === 'index.php') return null;
+    $seg = explode('/', $p, 2);
+    $map = [
+        'login' => ['auth', ['v' => 'login']], 'register' => ['auth', ['v' => 'register']],
+        'install' => ['auth', ['v' => 'install']], 'logout' => ['auth', ['v' => 'logout']],
+        'auth' => ['auth', []], 'devices' => ['devices', []], 'settings' => ['settings', []],
+        'data' => ['data', []], 'assets' => ['assets', []], 'api' => ['api', []],
+    ];
+    if (!isset($map[$seg[0]])) return null;
+    [$page, $get] = $map[$seg[0]];
+    if ($seg[0] === 'api') $get['p'] = $seg[1] ?? '';
+    return ['page' => $page, 'get' => $get];
 }
 
 // ---- util ----------------------------------------------------------------
@@ -176,6 +216,7 @@ function liarc_rate_check(string $action, int $max, int $window): bool {
 // ---- i18n ----------------------------------------------------------------
 
 function liarc_i18n_init(): void {
+    if (isset($GLOBALS['liarc_strings'])) return;
     $lang = null;
     if (isset($_GET['lang']) && in_array($_GET['lang'], LIARC_LANGS, true)) {
         $lang = $_GET['lang'];
@@ -249,8 +290,16 @@ function liarc_input(): array {
 
 function liarc_set_page(string $p): void { $GLOBALS['liarc_page'] = $p; }
 
-function ic(string $name, string $alt = ''): string {
-    return '<img class="ic" src="'.h(liarc_url('assets', ['f' => 'icon-'.$name])).'" alt="'.h($alt).'"'.($alt !== '' ? ' title="'.h($alt).'"' : '').'>';
+// Icon aus dem inline eingebetteten Sprite (ein Request statt vieler Einzeldateien)
+function ic(string $name, string $title = ''): string {
+    return '<svg class="ic" aria-hidden="true"'.($title !== '' ? ' data-tip="'.h($title).'"' : '').'><use href="#i-'.h($name).'"/></svg>'
+        .($title !== '' ? '<span class="sr">'.h($title).'</span>' : '');
+}
+
+function liarc_sprite(): string {
+    $file = liarc_repo_file('media/liarc/sprite.svg');
+    if ($file === null) return '';
+    return (string)@file_get_contents($file);
 }
 
 function liarc_head(string $title, bool $bare = false): void {
@@ -258,7 +307,7 @@ function liarc_head(string $title, bool $bare = false): void {
     $authed = liarc_user() !== null;
     echo '<!doctype html><html lang="'.h(liarc_lang()).'"><head>';
     echo '<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">';
-    echo '<meta name="color-scheme" content="dark"><meta name="theme-color" content="#0e0e12">';
+    echo '<meta name="color-scheme" content="dark"><meta name="theme-color" content="#0b0b0f">';
     echo '<meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">';
     echo '<title>'.h($title !== '' ? $title.' – '.liarc_cfg('title') : liarc_cfg('title')).'</title>';
     echo '<link rel="icon" type="image/svg+xml" href="'.h(liarc_url('assets', ['f' => 'icon-liarc'])).'">';
@@ -266,11 +315,12 @@ function liarc_head(string $title, bool $bare = false): void {
     echo '<link rel="manifest" href="'.h(liarc_url('assets', ['f' => 'manifest'])).'">';
     echo '<link rel="stylesheet" href="'.h(liarc_url('assets', ['f' => 'css'])).'">';
     echo '</head><body data-authed="'.($authed ? '1' : '0').'" data-csrf="'.($authed ? h(liarc_csrf_token()) : '').'" data-page="'.h((string)($GLOBALS['liarc_page'] ?? $_GET['_page'] ?? 'index')).'">';
+    echo liarc_sprite();
     if (!$bare) {
         echo '<header class="topbar"><a class="brand" href="'.h(liarc_url()).'">'.ic('liarc').'<span>'.h(liarc_cfg('title')).'</span></a><nav class="nav">';
         echo '<a href="'.h(liarc_url('devices')).'">'.ic('devices', t('nav.devices')).'</a>';
         echo '<a href="'.h(liarc_url('settings')).'">'.ic('gear', t('nav.settings')).'</a>';
-        echo '<a href="'.h(liarc_url((string)($_GET['_page'] ?? 'index'), ['lang' => liarc_next_lang()])).'" class="lang">'.ic('globe', strtoupper(liarc_next_lang())).'</a>';
+        echo '<a href="'.h(liarc_url((string)($_GET['_page'] ?? 'index'), ['lang' => liarc_next_lang()])).'">'.ic('globe', strtoupper(liarc_next_lang())).'</a>';
         echo '<form method="post" action="'.h(liarc_url('auth', ['v' => 'logout'])).'" class="inline"><input type="hidden" name="csrf" value="'.h(liarc_csrf_token()).'"><button type="submit" class="iconbtn">'.ic('logout', t('nav.logout')).'</button></form>';
         echo '</nav></header>';
     }
@@ -368,7 +418,7 @@ function liarc_register(string $username, string $password): array {
     ];
     if (!liarc_write_json($dir.'/auth.json', $auth)) return ['error' => 'auth.err_server'];
     liarc_write_json($dir.'/devices.json', []);
-    liarc_vault_save($uid, $dek, ['categories' => liarc_default_categories(), 'entries' => []]);
+    liarc_vault_save($uid, $dek, ['entries' => []]);
     return ['uid' => $uid, 'dek' => $dek];
 }
 
@@ -483,6 +533,64 @@ function liarc_api_auth(): ?array {
     return null;
 }
 
+// ---- Gruppen & Kategorien (fest im Code, hier anpassen) ------------------
+// kind: series (Zahlen ueber Zeit) | records (Eintraege mit Feldern, Status aktiv/alt)
+// Feldtypen: text, number, date, phone, note, secret (maskiert, zum Aufdecken)
+// 'me' => true: Eintraege koennen als "Ich" markiert werden (wie iOS-Kontakte)
+
+function liarc_groups(): array {
+    return [
+        'contacts' => ['icon' => 'users', 'cats' => ['contacts', 'phones']],
+        'health' => ['icon' => 'heart', 'cats' => ['heart', 'weight', 'height', 'steps', 'sleep', 'temp', 'medical']],
+        'security' => ['icon' => 'shield', 'cats' => ['passwords', 'certs', 'serials']],
+        'misc' => ['icon' => 'folder', 'cats' => ['documents', 'notes']],
+    ];
+}
+
+function liarc_categories(): array {
+    $f = fn(string $key, string $type) => ['key' => $key, 'type' => $type];
+    return [
+        'contacts' => ['icon' => 'user', 'kind' => 'records', 'unit' => '', 'me' => true,
+            'fields' => [$f('name', 'text'), $f('relation', 'text'), $f('birthdate', 'date'), $f('number', 'phone'), $f('blood', 'text'), $f('note', 'note')]],
+        'phones' => ['icon' => 'phone', 'kind' => 'records', 'unit' => '',
+            'fields' => [$f('label', 'text'), $f('number', 'phone')]],
+        'heart' => ['icon' => 'heart', 'kind' => 'series', 'unit' => 'bpm', 'fields' => []],
+        'weight' => ['icon' => 'scale', 'kind' => 'series', 'unit' => 'kg', 'fields' => []],
+        'height' => ['icon' => 'ruler', 'kind' => 'series', 'unit' => 'cm', 'fields' => []],
+        'steps' => ['icon' => 'steps', 'kind' => 'series', 'unit' => '', 'fields' => []],
+        'sleep' => ['icon' => 'moon', 'kind' => 'series', 'unit' => 'h', 'fields' => []],
+        'temp' => ['icon' => 'thermo', 'kind' => 'series', 'unit' => '°C', 'fields' => []],
+        'medical' => ['icon' => 'pill', 'kind' => 'records', 'unit' => '',
+            'fields' => [$f('label', 'text'), $f('date', 'date'), $f('note', 'note')]],
+        'passwords' => ['icon' => 'key', 'kind' => 'records', 'unit' => '',
+            'fields' => [$f('service', 'text'), $f('username', 'text'), $f('password', 'secret'), $f('mfa', 'secret'), $f('note', 'note')]],
+        'certs' => ['icon' => 'card', 'kind' => 'records', 'unit' => '',
+            'fields' => [$f('label', 'text'), $f('number', 'secret'), $f('date', 'date'), $f('note', 'note')]],
+        'serials' => ['icon' => 'devices', 'kind' => 'records', 'unit' => '',
+            'fields' => [$f('device', 'text'), $f('serial', 'text'), $f('note', 'note')]],
+        'documents' => ['icon' => 'note', 'kind' => 'records', 'unit' => '',
+            'fields' => [$f('label', 'text'), $f('number', 'text'), $f('date', 'date'), $f('note', 'note')]],
+        'notes' => ['icon' => 'note', 'kind' => 'records', 'unit' => '',
+            'fields' => [$f('title', 'text'), $f('note', 'note')]],
+    ];
+}
+
+function liarc_category(string $key): ?array {
+    $cats = liarc_categories();
+    if (!isset($cats[$key])) return null;
+    return $cats[$key] + ['key' => $key];
+}
+
+function liarc_group_of(string $catKey): string {
+    foreach (liarc_groups() as $g => $def) {
+        if (in_array($catKey, $def['cats'], true)) return $g;
+    }
+    return array_key_first(liarc_groups());
+}
+
+function liarc_cat_name(array $cat): string { return t('cat.'.$cat['key']); }
+function liarc_field_label(array $field): string { return t('f.'.$field['key']); }
+
 // ---- vault ---------------------------------------------------------------
 
 function liarc_vault_file(string $uid): string { return liarc_user_dir($uid).'/vault.enc'; }
@@ -499,74 +607,6 @@ function liarc_vault_save(string $uid, string $dek, array $vault): bool {
     if (file_put_contents($tmp, liarc_encrypt_json($vault, $dek), LOCK_EX) === false) return false;
     if (!rename($tmp, $file)) { @unlink($tmp); return false; }
     return true;
-}
-
-// Alle Lebensbereiche sind von Anfang an da; Namen/Feld-Labels via lkey uebersetzt
-function liarc_default_categories(): array {
-    $now = liarc_now();
-    $cat = fn(string $key, string $icon, string $kind, string $unit, array $fields) => [
-        'id' => liarc_id(), 'key' => $key, 'name' => '', 'icon' => $icon,
-        'kind' => $kind, 'unit' => $unit, 'fields' => $fields, 'created' => $now,
-    ];
-    $f = fn(string $key, string $type) => ['key' => $key, 'label' => '', 'lkey' => 'f.'.$key, 'type' => $type];
-    return [
-        $cat('profile', 'user', 'records', '', [$f('name', 'text'), $f('birthdate', 'date'), $f('blood', 'text'), $f('note', 'note')]),
-        $cat('people', 'users', 'records', '', [$f('name', 'text'), $f('relation', 'text'), $f('birthdate', 'date'), $f('number', 'phone'), $f('note', 'note')]),
-        $cat('phones', 'phone', 'records', '', [$f('label', 'text'), $f('number', 'phone')]),
-        $cat('heart', 'heart', 'series', 'bpm', []),
-        $cat('weight', 'scale', 'series', 'kg', []),
-        $cat('height', 'ruler', 'series', 'cm', []),
-        $cat('steps', 'steps', 'series', '', []),
-        $cat('sleep', 'moon', 'series', 'h', []),
-        $cat('temp', 'thermo', 'series', '°C', []),
-        $cat('medical', 'pill', 'records', '', [$f('label', 'text'), $f('date', 'date'), $f('note', 'note')]),
-        $cat('documents', 'card', 'records', '', [$f('label', 'text'), $f('number', 'text'), $f('date', 'date'), $f('note', 'note')]),
-        $cat('notes', 'note', 'records', '', [$f('title', 'text'), $f('note', 'note')]),
-    ];
-}
-
-function liarc_cat_name(array $cat): string {
-    if (($cat['name'] ?? '') !== '') return $cat['name'];
-    return isset($cat['key']) ? t('cat.'.$cat['key']) : t('cat.custom');
-}
-
-function liarc_field_label(array $field): string {
-    if (($field['label'] ?? '') !== '') return $field['label'];
-    return isset($field['lkey']) ? t($field['lkey']) : $field['key'];
-}
-
-function liarc_category_get(array $vault, string $catId): ?array {
-    foreach ($vault['categories'] as $c) if ($c['id'] === $catId) return $c;
-    return null;
-}
-
-function liarc_category_normalize(array $in): array {
-    $name = trim((string)($in['name'] ?? ''));
-    $kind = (string)($in['kind'] ?? 'records');
-    if ($name === '' || strlen($name) > 120) return ['error' => 'err.name'];
-    if (!in_array($kind, ['series', 'records'], true)) return ['error' => 'err.kind'];
-    $fields = [];
-    $seen = [];
-    if ($kind === 'records') {
-        foreach ((array)($in['fields'] ?? []) as $fd) {
-            $label = trim((string)($fd['label'] ?? ''));
-            $type = (string)($fd['type'] ?? 'text');
-            if ($label === '') continue;
-            if (!in_array($type, LIARC_FIELD_TYPES, true)) $type = 'text';
-            $key = trim(strtolower(preg_replace('/[^a-z0-9]+/i', '_', $label)), '_');
-            if ($key === '') $key = 'f'.count($fields);
-            while (isset($seen[$key])) $key .= '_';
-            $seen[$key] = true;
-            $fields[] = ['key' => $key, 'label' => liarc_cut($label, 40), 'type' => $type];
-        }
-        if (count($fields) === 0) return ['error' => 'err.fields'];
-    }
-    return ['category' => [
-        'id' => liarc_id(), 'key' => null, 'name' => liarc_cut($name, 60),
-        'icon' => 'folder', 'kind' => $kind,
-        'unit' => liarc_cut(trim((string)($in['unit'] ?? '')), 12),
-        'fields' => $fields, 'created' => liarc_now(),
-    ]];
 }
 
 function liarc_entry_build(array $cat, array $in): array {
@@ -625,4 +665,18 @@ function liarc_field_display(array $field, string $value): string {
         if ($years !== null) return $value.' · '.$years;
     }
     return $value;
+}
+
+// "Ich"-Markierung: genau ein Eintrag pro Kategorie (nur wenn 'me' erlaubt)
+function liarc_entry_set_me(array &$vault, string $catKey, string $entryId): bool {
+    $cat = liarc_category($catKey);
+    if ($cat === null || empty($cat['me'])) return false;
+    $found = false;
+    if (!isset($vault['entries'][$catKey])) return false;
+    foreach ($vault['entries'][$catKey] as &$e) {
+        if ($e['id'] === $entryId) { $e['me'] = !($e['me'] ?? false); $found = true; }
+        else unset($e['me']);
+    }
+    unset($e);
+    return $found;
 }
