@@ -16,13 +16,17 @@ Zielserver (`liarc-data/`), nie im Repo.
 - Web-POSTs mit CSRF (`liarc_csrf_check`), API mit Bearer (`liarc_api_auth`).
 - Alle Strings über `t('key')` + alle drei lang-Dateien pflegen. So wenig Text
   wie möglich; Bedienung über Icons (weiße Linien-SVGs, 24x24, stroke 1.8).
+- Icons werden als ein Sprite eingebettet: nach Icon-Änderungen
+  media/liarc/sprite.svg neu bauen (Symbole `i-<name>`).
+- Gruppen/Kategorien sind fest in lib.php (liarc_groups/liarc_categories);
+  Nutzer legen keine an. Die Instance-Datei bleibt minimal (nur Variablen).
 - Design dunkel und einheitlich; keine Erklärtexte im Interface.
-- Default-Kategorien (key gesetzt) sind nicht löschbar.
+
 
 ## Nach Änderungen
 
 - `php -l` auf geänderte Dateien.
-- Neue Route: yaml in der Instance ergänzen.
+- Neue Route: yaml in der Instance ergänzen (und Mapping in liarc_pretty_route).
 - Neues Icon: SVG in media/liarc/, Name = `ic('name')` = assets f=icon-name.
 - Smoke-Test: Registrierung, Eintrag, Chart, API-Token, Geräte-Widerruf.
 - Achtung Cache: Loader cached 300s; `?_refresh=1` erzwingt Neuladen.

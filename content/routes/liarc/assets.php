@@ -2,17 +2,18 @@
 declare(strict_types=1);
 if (!defined('LIARC_LIB')) {
     require function_exists('app_get_local_script')
-        ? app_get_local_script(($liarc_repo ?? 'https://raw.githubusercontent.com/florianthepro/pages/main/content').'/routes/liarc/lib.php', isset($_GET['_refresh']) && $_GET['_refresh'] === '1', 300)
+        ? app_get_local_script(($liarc_repo ?? 'https://raw.githubusercontent.com/florianthepro/pages/main/content').'/routes/liarc/lib.php', isset($_GET['_refresh']) && $_GET['_refresh'] === '1', 86400)
         : __DIR__.'/lib.php';
 }
 liarc_boot(get_defined_vars());
 
-// liefert CSS/JS/Manifest/Icons same-origin aus (CSP bleibt 'self')
+// liefert CSS/JS/Manifest/Icons same-origin aus (CSP bleibt 'self'), lange gecacht
 $f = (string)($_GET['f'] ?? '');
 $map = [
     'css' => ['routes/liarc/app.css', 'text/css'],
     'js' => ['routes/liarc/app.js', 'application/javascript'],
     'manifest' => ['routes/liarc/manifest.webmanifest', 'application/manifest+json'],
+    'sprite' => ['media/liarc/sprite.svg', 'image/svg+xml'],
 ];
 
 if (isset($map[$f])) {
@@ -31,8 +32,14 @@ if ($path === null || !is_readable($path)) {
     exit;
 }
 
+$etag = '"'.md5_file($path).'"';
+if (($_SERVER['HTTP_IF_NONE_MATCH'] ?? '') === $etag) {
+    http_response_code(304);
+    exit;
+}
 header('Content-Type: '.$mime.'; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
-header('Cache-Control: public, max-age=3600');
+header('Cache-Control: public, max-age=604800');
+header('ETag: '.$etag);
 readfile($path);
 exit;

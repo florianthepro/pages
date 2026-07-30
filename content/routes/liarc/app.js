@@ -42,28 +42,13 @@
         f.addEventListener('submit', clearDevice);
     });
 
-    var openNew = document.querySelector('[data-open-new]');
-    if (openNew) {
-        openNew.addEventListener('click', function () {
-            var d = document.getElementById('new');
-            if (d) d.open = true;
+    // maskierte Werte (Passwoerter usw.) per Tipp aufdecken
+    document.querySelectorAll('button.secret').forEach(function (b) {
+        b.addEventListener('click', function () {
+            var open = b.classList.toggle('open');
+            b.textContent = open ? (b.dataset.secret || '') : '\u2022\u2022\u2022';
         });
-    }
-
-    var kindSelect = document.querySelector('[data-kind-select]');
-    if (kindSelect) {
-        var syncKind = function () {
-            var series = kindSelect.value === 'series';
-            document.querySelectorAll('[data-kind-series]').forEach(function (el) {
-                el.classList.toggle('hidden', !series);
-            });
-            document.querySelectorAll('[data-kind-records]').forEach(function (el) {
-                el.classList.toggle('hidden', series);
-            });
-        };
-        kindSelect.addEventListener('change', syncKind);
-        syncKind();
-    }
+    });
 
     if (page === 'install') {
         var block = /iPhone|iPad|iPod/i.test(navigator.userAgent) ? 'ios'

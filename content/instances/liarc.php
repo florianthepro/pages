@@ -1,26 +1,16 @@
 <?php
 declare(strict_types=1);
 ///////////////////////
-$liarc_branch='main';
-$liarc_title='LIARC';
+$liarc_title='LIARC'; #Seitenname
+$liarc_branch='main'; #Repo-Branch
 $liarc_datadir=__DIR__.'/liarc-data'; #lokale Nutzerdaten (wird automatisch angelegt und per .htaccess gesperrt)
+#Gruppen/Kategorien/Felder aendern: content/routes/liarc/lib.php (liarc_groups / liarc_categories)
+#Texte/Sprachen: content/routes/liarc/lang-de|en|th.php
+#Design: content/routes/liarc/app.css / Icons: content/media/liarc/ (sprite.svg neu bauen)
 $liarc_repo='https://raw.githubusercontent.com/florianthepro/pages/'.$liarc_branch.'/content';
 $liarc_icon=$liarc_repo.'/media/liarc/liarc.svg';
 
 $sharedVars=get_defined_vars();
-
-# huebsche URLs (/login, /api/...) auf _page mappen, wenn .htaccess alles auf index.php leitet
-$__p=trim((string)parse_url($_SERVER['REQUEST_URI']??'/',PHP_URL_PATH),'/');
-$__b=trim(str_replace('\\','/',dirname($_SERVER['SCRIPT_NAME']??'/')),'/');
-if($__b!==''&&str_starts_with($__p,$__b))$__p=trim(substr($__p,strlen($__b)),'/');
-if(!isset($_GET['_page'])&&$__p!==''&&$__p!=='index.php'){
-$__seg=explode('/',$__p,2);
-$__map=['login'=>['auth',['v'=>'login']],'register'=>['auth',['v'=>'register']],'install'=>['auth',['v'=>'install']],'logout'=>['auth',['v'=>'logout']],'auth'=>['auth',[]],'api'=>['api',[]],'devices'=>['devices',[]],'settings'=>['settings',[]],'data'=>['data',[]],'assets'=>['assets',[]]];
-if(isset($__map[$__seg[0]])){
-$_GET['_page']=$__map[$__seg[0]][0];
-foreach($__map[$__seg[0]][1] as $__k=>$__v)$_GET[$__k]=$_GET[$__k]??$__v;
-if($__seg[0]==='api')$_GET['p']=$_GET['p']??($__seg[1]??'');
-}}
 
 $yaml=<<<YAML
 license: "https://raw.githubusercontent.com/florianthepro/pages/main/LICENSE"
