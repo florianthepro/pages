@@ -73,10 +73,15 @@ function liarc_pretty_route(): ?array {
         'auth' => ['auth', []], 'devices' => ['devices', []], 'settings' => ['settings', []],
         'data' => ['data', []], 'assets' => ['assets', []], 'api' => ['api', []],
     ];
-    if (!isset($map[$seg[0]])) return null;
-    [$page, $get] = $map[$seg[0]];
-    if ($seg[0] === 'api') $get['p'] = $seg[1] ?? '';
-    return ['page' => $page, 'get' => $get];
+    if (isset($map[$seg[0]])) {
+        [$page, $get] = $map[$seg[0]];
+        if ($seg[0] === 'api') $get['p'] = $seg[1] ?? '';
+        return ['page' => $page, 'get' => $get];
+    }
+    // /health -> Gruppe, /heart -> Kategorie
+    if (isset(liarc_groups()[$seg[0]])) return ['page' => 'index', 'get' => ['g' => $seg[0]]];
+    if (liarc_category($seg[0]) !== null) return ['page' => 'index', 'get' => ['cat' => $seg[0]]];
+    return null;
 }
 
 // ---- util ----------------------------------------------------------------
@@ -302,7 +307,7 @@ function liarc_sprite(): string {
     return (string)@file_get_contents($file);
 }
 
-function liarc_head(string $title, bool $bare = false): void {
+function liarc_head(string $title, bool $bare = false, ?string $activeCat = null): void {
     liarc_headers();
     $authed = liarc_user() !== null;
     echo '<!doctype html><html lang="'.h(liarc_lang()).'"><head>';
@@ -314,13 +319,32 @@ function liarc_head(string $title, bool $bare = false): void {
     echo '<link rel="apple-touch-icon" href="'.h(liarc_url('assets', ['f' => 'icon-liarc'])).'">';
     echo '<link rel="manifest" href="'.h(liarc_url('assets', ['f' => 'manifest'])).'">';
     echo '<link rel="stylesheet" href="'.h(liarc_url('assets', ['f' => 'css'])).'">';
-    echo '</head><body data-authed="'.($authed ? '1' : '0').'" data-csrf="'.($authed ? h(liarc_csrf_token()) : '').'" data-page="'.h((string)($GLOBALS['liarc_page'] ?? $_GET['_page'] ?? 'index')).'">';
+    $base = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
+    echo '</head><body data-authed="'.($authed ? '1' : '0').'" data-csrf="'.($authed ? h(liarc_csrf_token()) : '').'" data-page="'.h((string)($GLOBALS['liarc_page'] ?? $_GET['_page'] ?? 'index')).'" data-base="'.h($base).'">';
     echo liarc_sprite();
     if (!$bare) {
+        $curPage = (string)($GLOBALS['liarc_page'] ?? 'index');
+        // Desktop: Seitenleiste wie bei Desktop-Apps
+        echo '<aside class="side"><a class="brand" href="'.h(liarc_url()).'">'.ic('liarc').'<span>'.h(liarc_cfg('title')).'</span></a><nav class="sidenav">';
+        foreach (liarc_groups() as $g => $gd) {
+            echo '<div class="sg">'.h(t('g.'.$g)).'</div>';
+            foreach ($gd['cats'] as $ck) {
+                $c = liarc_category($ck);
+                if ($c === null) continue;
+                echo '<a class="sc'.($ck === $activeCat ? ' active' : '').'" href="'.h(liarc_url('index', ['cat' => $ck])).'">'.ic($c['icon']).'<span>'.h(liarc_cat_name($c)).'</span></a>';
+            }
+        }
+        echo '</nav><div class="sidefoot">';
+        echo '<a href="'.h(liarc_url('devices')).'" class="'.($curPage === 'devices' ? 'active' : '').'">'.ic('devices', t('nav.devices')).'</a>';
+        echo '<a href="'.h(liarc_url('settings')).'" class="'.($curPage === 'settings' ? 'active' : '').'">'.ic('gear', t('nav.settings')).'</a>';
+        echo '<a href="'.h(liarc_url($curPage, ['lang' => liarc_next_lang()])).'">'.ic('globe', strtoupper(liarc_next_lang())).'</a>';
+        echo '<form method="post" action="'.h(liarc_url('auth', ['v' => 'logout'])).'" class="inline"><input type="hidden" name="csrf" value="'.h(liarc_csrf_token()).'"><button type="submit" class="iconbtn">'.ic('logout', t('nav.logout')).'</button></form>';
+        echo '</div></aside>';
+        // Handy: Topbar
         echo '<header class="topbar"><a class="brand" href="'.h(liarc_url()).'">'.ic('liarc').'<span>'.h(liarc_cfg('title')).'</span></a><nav class="nav">';
         echo '<a href="'.h(liarc_url('devices')).'">'.ic('devices', t('nav.devices')).'</a>';
         echo '<a href="'.h(liarc_url('settings')).'">'.ic('gear', t('nav.settings')).'</a>';
-        echo '<a href="'.h(liarc_url((string)($_GET['_page'] ?? 'index'), ['lang' => liarc_next_lang()])).'">'.ic('globe', strtoupper(liarc_next_lang())).'</a>';
+        echo '<a href="'.h(liarc_url($curPage, ['lang' => liarc_next_lang()])).'">'.ic('globe', strtoupper(liarc_next_lang())).'</a>';
         echo '<form method="post" action="'.h(liarc_url('auth', ['v' => 'logout'])).'" class="inline"><input type="hidden" name="csrf" value="'.h(liarc_csrf_token()).'"><button type="submit" class="iconbtn">'.ic('logout', t('nav.logout')).'</button></form>';
         echo '</nav></header>';
     }

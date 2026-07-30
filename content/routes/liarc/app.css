@@ -26,6 +26,10 @@ a { color: var(--accent); text-decoration: none; }
 .ic { width: 20px; height: 20px; flex: none; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 
+/* Desktop-Seitenleiste (ab 920px sichtbar) */
+.side { display: none; }
+.pagehead { display: none; }
+
 .topbar {
     display: flex;
     align-items: center;
@@ -239,4 +243,65 @@ pre { background: var(--bg3); padding: 10px; border-radius: 10px; overflow-x: au
     .group { padding: 9px 13px; }
     .addrow { flex-wrap: wrap; }
     .addrow input[type="datetime-local"] { flex-basis: 100%; order: 3; }
+}
+
+/* PC: Seitenleiste + Inhaltsspalte, Handy-Navigation ausgeblendet */
+@media (min-width: 920px) {
+    .topbar, .mobilenav { display: none; }
+
+    .side {
+        display: flex;
+        flex-direction: column;
+        position: fixed;
+        top: 0; left: 0; bottom: 0;
+        width: 232px;
+        background: var(--bg2);
+        border-right: 1px solid var(--border);
+        padding: 16px 10px 12px;
+        z-index: 10;
+    }
+    .side .brand { display: flex; align-items: center; gap: 10px; color: var(--text); font-weight: 700; letter-spacing: 2px; padding: 4px 10px 14px; }
+    .side .brand .ic { width: 24px; height: 24px; }
+
+    .sidenav { flex: 1; overflow-y: auto; scrollbar-width: thin; }
+    .sg {
+        color: var(--dim);
+        font-size: .68rem;
+        text-transform: uppercase;
+        letter-spacing: 1.4px;
+        padding: 14px 10px 5px;
+    }
+    .sc {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 10px;
+        border-radius: 9px;
+        color: var(--dim);
+        font-size: .9rem;
+        transition: background .12s, color .12s;
+    }
+    .sc .ic { width: 18px; height: 18px; opacity: .55; }
+    .sc:hover { background: var(--bg3); color: var(--text); }
+    .sc.active { background: var(--bg3); color: var(--text); }
+    .sc.active .ic { opacity: 1; }
+
+    .sidefoot { display: flex; align-items: center; justify-content: space-around; padding-top: 10px; border-top: 1px solid var(--border); }
+    .sidefoot a { display: inline-flex; padding: 8px; border-radius: 9px; }
+    .sidefoot a:hover, .sidefoot a.active { background: var(--bg3); }
+    .sidefoot .ic { width: 19px; height: 19px; opacity: .7; }
+
+    .main { margin-left: 232px; max-width: none; padding: 26px 36px 60px; }
+    .main > * { max-width: 720px; }
+    .main.centered { margin-left: 0; }
+
+    .pagehead {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 1.25rem;
+        font-weight: 650;
+        padding: 0 0 18px;
+    }
+    .pagehead .ic { width: 24px; height: 24px; }
 }

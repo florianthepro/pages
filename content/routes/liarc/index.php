@@ -24,17 +24,29 @@ if ($vault === null) { liarc_session_logout(); liarc_redirect('auth', ['v' => 'l
 
 $groups = liarc_groups();
 $catKey = (string)($_GET['cat'] ?? '');
+// ohne Parameter: letzte Ansicht aus dem Browser-Cookie
+if ($catKey === '' && !isset($_GET['g']) && liarc_category((string)($_COOKIE['liarc_view'] ?? '')) !== null) {
+    $catKey = (string)$_COOKIE['liarc_view'];
+}
 $cat = $catKey !== '' ? liarc_category($catKey) : null;
 $group = $cat !== null ? liarc_group_of($cat['key']) : (string)($_GET['g'] ?? array_key_first($groups));
 if (!isset($groups[$group])) $group = array_key_first($groups);
 if ($cat === null) $cat = liarc_category($groups[$group]['cats'][0]);
 
+// aktuelle Ansicht merken, damit "/" ohne sichtbare Parameter reicht
+setcookie('liarc_view', $cat['key'], [
+    'expires' => liarc_now() + 31536000, 'path' => '/',
+    'secure' => liarc_is_https(), 'httponly' => false, 'samesite' => 'Lax',
+]);
+
 $entries = $vault['entries'][$cat['key']] ?? [];
 $stats = liarc_category_stats($cat, $entries);
 $csrf = liarc_csrf_token();
 
-liarc_head(liarc_cat_name($cat));
+liarc_head(liarc_cat_name($cat), false, $cat['key']);
 ?>
+<div class="pagehead"><?= ic($cat['icon']) ?><span><?= h(liarc_cat_name($cat)) ?></span></div>
+<div class="mobilenav">
 <nav class="groupbar">
 <?php foreach ($groups as $g => $gd): ?>
     <a href="<?= h(liarc_url('index', ['g' => $g])) ?>" class="group<?= $g === $group ? ' active' : '' ?>">
@@ -50,6 +62,7 @@ liarc_head(liarc_cat_name($cat));
     </a>
 <?php endforeach; ?>
 </nav>
+</div>
 
 <?php if (!empty($_GET['error'])): ?><p class="error"><?= h(t((string)$_GET['error'])) ?></p><?php endif; ?>
 

@@ -26,6 +26,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 $csrf = liarc_csrf_token();
 liarc_head(t('nav.settings'));
 ?>
+<div class="pagehead"><?= ic('gear') ?><span><?= h(t('nav.settings')) ?></span></div>
 <div class="card">
     <p><?= ic('user') ?><strong><?= h(liarc_username($user['uid'])) ?></strong></p>
 </div>

@@ -32,6 +32,52 @@ if ($path === '/auth/device' && $method === 'POST') {
     liarc_json(['ok' => true]);
 }
 
+// GET /api -> Index mit Endpunkten und Parametern; ?page=<gruppe|kategorie> -> Struktur
+if ($path === '/' && $method === 'GET') {
+    liarc_i18n_init();
+    $groups = liarc_groups();
+    $catInfo = function (string $key) {
+        $cat = liarc_category($key);
+        return [
+            'key' => $key,
+            'name' => liarc_cat_name($cat),
+            'group' => liarc_group_of($key),
+            'icon' => $cat['icon'],
+            'kind' => $cat['kind'],
+            'unit' => $cat['unit'],
+            'me' => !empty($cat['me']),
+            'fields' => array_map(fn($f) => ['key' => $f['key'], 'label' => liarc_field_label($f), 'type' => $f['type']], $cat['fields']),
+        ];
+    };
+    $page = trim((string)($_GET['page'] ?? ($in['page'] ?? '')));
+    if ($page !== '') {
+        if (isset($groups[$page])) {
+            liarc_json(['ok' => true, 'group' => ['key' => $page, 'name' => t('g.'.$page), 'icon' => $groups[$page]['icon'],
+                'categories' => array_map($catInfo, $groups[$page]['cats'])]]);
+        }
+        if (liarc_category($page) !== null) {
+            liarc_json(['ok' => true, 'category' => $catInfo($page)]);
+        }
+        liarc_json_error('unknown_page', 404);
+    }
+    $groupsOut = [];
+    foreach ($groups as $g => $gd) $groupsOut[] = ['key' => $g, 'name' => t('g.'.$g), 'categories' => $gd['cats']];
+    liarc_json(['ok' => true, 'name' => liarc_cfg('title'),
+        'parameters' => ['page' => 'GET /api?page=<group|category>  e.g. health, heart'],
+        'auth' => [
+            'login' => 'POST /api/auth/login {username, password, device_name?} -> token',
+            'headers' => ['Authorization: Bearer <token>', 'X-LIARC-User: <username>'],
+        ],
+        'endpoints' => [
+            'GET /api/me', 'GET /api/devices', 'DELETE /api/devices/{id}',
+            'GET /api/groups', 'GET /api/categories',
+            'GET /api/categories/{key}', 'GET /api/categories/{key}/stats', 'GET /api/categories/{key}/entries',
+            'POST /api/categories/{key}/entries',
+            'PATCH /api/categories/{key}/entries/{id}', 'DELETE /api/categories/{key}/entries/{id}',
+        ],
+        'groups' => $groupsOut]);
+}
+
 $user = liarc_api_auth();
 if ($user === null) liarc_json_error('unauthorized', 401);
 

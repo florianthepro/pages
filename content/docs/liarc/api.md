@@ -3,6 +3,12 @@
 Basis: `https://domain.tld/api/...` (mit .htaccess) oder `?_page=api&p=...`.
 Antworten: `{"ok": true, ...}` oder `{"ok": false, "error": "..."}`.
 
+## Index
+
+`GET /api` (ohne Auth) liefert Endpunkte, Auth-Nutzung und Gruppen.
+`GET /api?page=<gruppe|kategorie>` (z.B. `health`, `heart`) liefert die
+Struktur inkl. Felder – ohne Nutzerdaten.
+
 ## Auth
 
 ```

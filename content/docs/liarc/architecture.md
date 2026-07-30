@@ -37,6 +37,16 @@ Nutzerdaten liegen NUR lokal unter `$liarc_datadir` (Default `liarc-data/` neben
 - assets.php sendet ETag + Cache-Control 7 Tage.
 - Nach dem Aendern von Einzel-Icons sprite.svg neu bauen (Symbole `i-<name>`).
 
+## Ansicht / URLs
+
+- Auto-Erkennung PC/Handy per CSS-Breakpoint: ab 920px Seitenleiste
+  (Gruppen + Kategorien, Footer-Icons), darunter Topbar + Tabs/Chips.
+- Sichtbare URL bleibt sauber: app.js ersetzt die Adresse nach dem Laden
+  durch den Pfad (/, /devices, /login, ...); die aktuelle Kategorie steht im
+  Cookie `liarc_view`, "/" oeffnet also immer die letzte Ansicht.
+- Direktpfade funktionieren trotzdem: /health (Gruppe), /heart (Kategorie),
+  /login usw. werden von liarc_pretty_route() aufgeloest.
+
 ## Gruppen & Kategorien (fest im Code)
 
 Nutzer legen keine Kategorien an. Definition in lib.php:
