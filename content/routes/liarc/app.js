@@ -70,7 +70,7 @@
     // Handy im Browser: App nur als Home-Webapp, sonst Anleitung
     var openPages = ['login', 'register', 'install'];
     if (authed && isMobile && !isStandalone && openPages.indexOf(page) === -1) {
-        location.replace('?_page=auth&v=install');
+        location.replace((body.dataset.base || '') + '/?_page=auth&v=install');
         return;
     }
 
@@ -80,12 +80,12 @@
         if (dev) {
             var hint = document.querySelector('[data-device-login]');
             if (hint) hint.classList.remove('hidden');
-            fetch('?_page=api&p=auth/device', {
+            fetch((body.dataset.base || '') + '/?_page=api&p=auth/device', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username: dev.username, token: dev.token })
             }).then(function (r) {
-                if (r.ok) { location.replace('?_page=index'); }
+                if (r.ok) { location.replace((body.dataset.base || '') + '/'); }
                 else { clearDevice(); if (hint) hint.classList.add('hidden'); }
             }).catch(function () { if (hint) hint.classList.add('hidden'); });
         }
@@ -96,7 +96,7 @@
         var params = new URLSearchParams();
         params.set('csrf', csrf);
         params.set('name', deviceName());
-        fetch('?_page=data&do=provision', {
+        fetch((body.dataset.base || '') + '/?_page=data&do=provision', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: params.toString()
