@@ -32,6 +32,16 @@
         return os + (isStandalone ? ' App' : ' Browser');
     }
 
+    // Adresse sauber halten: Zustand steckt im Cookie, sichtbar bleibt nur der Pfad
+    try {
+        var prettyMap = { devices: '/devices', settings: '/settings', login: '/login', register: '/register', install: '/install' };
+        var base = body.dataset.base || '';
+        var clean = (base + (prettyMap[page] || '/')) || '/';
+        if (location.search || location.pathname !== clean) {
+            history.replaceState(null, '', clean);
+        }
+    } catch (e) {}
+
     document.querySelectorAll('form[data-confirm]').forEach(function (f) {
         f.addEventListener('submit', function (e) {
             if (!window.confirm('?')) e.preventDefault();

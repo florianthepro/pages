@@ -36,6 +36,7 @@ $csrf = liarc_csrf_token();
 
 liarc_head(t('nav.devices'));
 ?>
+<div class="pagehead"><?= ic('devices') ?><span><?= h(t('nav.devices')) ?></span></div>
 <?php if ($newToken !== null): ?>
 <div class="card token-card">
     <p><?= ic('key') ?><?= h(t('d.token_once')) ?></p>
