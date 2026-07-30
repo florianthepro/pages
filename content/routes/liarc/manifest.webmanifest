@@ -1,0 +1,12 @@
+{
+    "name": "LIARC",
+    "short_name": "LIARC",
+    "start_url": "./",
+    "scope": "./",
+    "display": "standalone",
+    "background_color": "#0e0e12",
+    "theme_color": "#0e0e12",
+    "icons": [
+        { "src": "./?_page=assets&f=icon-liarc", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+    ]
+}
