@@ -10,8 +10,8 @@ liarc_i18n_init();
 liarc_set_page('settings');
 
 $user = liarc_require_user();
-$error = null;
-$ok = null;
+$error = isset($_GET['error']) ? (string)$_GET['error'] : null;
+$ok = isset($_GET['ok']) ? 'a.saved' : null;
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     liarc_csrf_check();
@@ -48,5 +48,17 @@ liarc_head(t('nav.settings'));
     <?php foreach (LIARC_LANGS as $l): ?>
     <a href="<?= h(liarc_url('settings', ['lang' => $l])) ?>" class="<?= liarc_lang() === $l ? 'active' : '' ?>"><?= h(strtoupper($l)) ?></a>
     <?php endforeach; ?>
+</div>
+
+<div class="card">
+    <div class="row">
+        <a href="<?= h(liarc_url('data', ['do' => 'export'])) ?>" class="iconbtn wide" download><?= ic('download', t('st.export')) ?><span class="btlabel"><?= h(t('st.export')) ?></span></a>
+    </div>
+    <p></p>
+    <form method="post" action="<?= h(liarc_url('data', ['do' => 'import'])) ?>" enctype="multipart/form-data" class="row" data-confirm="<?= h(t('st.import_sure')) ?>">
+        <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+        <input type="file" name="file" accept=".json" required>
+        <button type="submit" class="iconbtn"><?= ic('upload', t('st.import')) ?></button>
+    </form>
 </div>
 <?php liarc_foot();

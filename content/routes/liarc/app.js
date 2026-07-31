@@ -44,9 +44,31 @@
 
     document.querySelectorAll('form[data-confirm]').forEach(function (f) {
         f.addEventListener('submit', function (e) {
-            if (!window.confirm('?')) e.preventDefault();
+            if (!window.confirm(f.dataset.confirm || '?')) e.preventDefault();
         });
     });
+
+    // geheime werte kopieren (ohne sie anzuzeigen)
+    document.querySelectorAll('button.copy[data-copy]').forEach(function (b) {
+        b.addEventListener('click', function () {
+            if (!navigator.clipboard) return;
+            navigator.clipboard.writeText(b.dataset.copy || '').then(function () {
+                b.classList.add('on');
+                setTimeout(function () { b.classList.remove('on'); }, 900);
+            });
+        });
+    });
+
+    // suche in listen
+    var find = document.querySelector('[data-find-input]');
+    if (find) {
+        find.addEventListener('input', function () {
+            var q = find.value.toLowerCase();
+            document.querySelectorAll('[data-find]').forEach(function (r) {
+                r.style.display = q === '' || r.textContent.toLowerCase().indexOf(q) !== -1 ? '' : 'none';
+            });
+        });
+    }
 
     document.querySelectorAll('form[action*="v=logout"]').forEach(function (f) {
         f.addEventListener('submit', clearDevice);
@@ -68,9 +90,20 @@
     }
 
     // Handy im Browser: App nur als Home-Webapp, sonst Anleitung
+    // ("weiter im browser" auf der Anleitungsseite hebt das fuer die Sitzung auf)
+    var webOk = false;
+    try { webOk = sessionStorage.getItem('liarc_web_ok') === '1'; } catch (e) {}
+    var cont = document.querySelector('[data-continue]');
+    if (cont) {
+        cont.addEventListener('click', function (e) {
+            e.preventDefault();
+            try { sessionStorage.setItem('liarc_web_ok', '1'); } catch (err) {}
+            location.href = (body.dataset.base || '') + '/';
+        });
+    }
     var openPages = ['login', 'register', 'install'];
-    if (authed && isMobile && !isStandalone && openPages.indexOf(page) === -1) {
-        location.replace('?_page=auth&v=install');
+    if (authed && isMobile && !isStandalone && !webOk && openPages.indexOf(page) === -1) {
+        location.replace((body.dataset.base || '') + '/?_page=auth&v=install');
         return;
     }
 
@@ -80,12 +113,12 @@
         if (dev) {
             var hint = document.querySelector('[data-device-login]');
             if (hint) hint.classList.remove('hidden');
-            fetch('?_page=api&p=auth/device', {
+            fetch((body.dataset.base || '') + '/?_page=api&p=auth/device', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username: dev.username, token: dev.token })
             }).then(function (r) {
-                if (r.ok) { location.replace('?_page=index'); }
+                if (r.ok) { location.replace((body.dataset.base || '') + '/'); }
                 else { clearDevice(); if (hint) hint.classList.add('hidden'); }
             }).catch(function () { if (hint) hint.classList.add('hidden'); });
         }
@@ -96,7 +129,7 @@
         var params = new URLSearchParams();
         params.set('csrf', csrf);
         params.set('name', deviceName());
-        fetch('?_page=data&do=provision', {
+        fetch((body.dataset.base || '') + '/?_page=data&do=provision', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: params.toString()
