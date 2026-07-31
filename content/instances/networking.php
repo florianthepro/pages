@@ -4,11 +4,8 @@ declare(strict_types=1);
 $networking_datadir='networking'; #daten-ordner: name relativ zur seite, absoluter pfad auch möglich
 $networking_title='NETWORKING';
 $networking_heading='NETWORKING by Florian';
-$networking_editortitle='Netzwerk Editor';
 $networking_iconbase='https://raw.githubusercontent.com/florianthepro/pages/main/content/media/networking/'; #base url for typeIcons values without http
 $networking_icon='https://raw.githubusercontent.com/florianthepro/pages/main/content/media/networking/index.svg';
-$networking_editoricon='https://raw.githubusercontent.com/florianthepro/pages/main/content/media/networking/edit.svg';
-$networking_editorheading=$networking_heading.' '.$networking_editortitle;
 $networking_basedir=dirname((string)($_SERVER['SCRIPT_FILENAME']??__FILE__)); #ort dieser seite
 if(!preg_match('~^([/\\\\]|[A-Za-z]:)~',$networking_datadir))$networking_datadir=$networking_basedir.DIRECTORY_SEPARATOR.$networking_datadir;
 $networking_jsondir=$networking_datadir.DIRECTORY_SEPARATOR.'config.json';
@@ -19,7 +16,6 @@ $yaml=<<<'YAML'
 license: "https://raw.githubusercontent.com/florianthepro/pages/main/LICENSE"
 blocked: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/blocked.html"
 index: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/networking/index.php"
-edit: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/networking/edit.php"
 raw: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/networking/raw.php"
 YAML;
 ///////////////////////

@@ -110,9 +110,44 @@ $cfg=defaultConfig();
 applyDevicesDerivedDefaults($cfg);
 return $cfg;
 }
+function save_config($path,$cfg){
+$cfg=normalizeConfig($cfg);
+applyDevicesDerivedDefaults($cfg);
+foreach($cfg['devices'] as &$d){
+if(!is_array($d))continue;
+if(isset($d['Connections'])&&is_array($d['Connections'])){
+foreach($d['Connections'] as &$c){if(is_array($c))unset($c['direction']);}
+unset($c);
+}
+}
+unset($d);
+$json=json_encode($cfg,JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+if($json===false)return false;
+$dir=dirname($path);
+if(!is_dir($dir))@mkdir($dir,0775,true);
+if(is_readable($path))@copy($path,$path.'.bak');
+return @file_put_contents($path,$json,LOCK_EX)!==false;
+}
+session_start();
+if(empty($_SESSION['networking_csrf']))$_SESSION['networking_csrf']=bin2hex(random_bytes(16));
+$csrfToken=$_SESSION['networking_csrf'];
+$save_msg='';
+$save_err='';
+if($_SERVER['REQUEST_METHOD']==='POST'&&($_POST['action']??'')==='save'){
+$token=$_POST['csrf']??'';
+if(!hash_equals($csrfToken,(string)$token))$save_err='Ungültiges Sicherheits-Token.';
+else{
+$decoded=json_decode((string)($_POST['config_json']??''),true);
+if(!is_array($decoded))$save_err='Übergebene Konfiguration ist kein gültiges JSON-Objekt.';
+else{
+if(save_config($networking_jsondir,$decoded))$save_msg='Gespeichert.';
+else $save_err='Fehler beim Speichern: '.$networking_jsondir;
+}
+}
+}
 $config=load_config($networking_jsondir);
 $configError=null;
-if(!is_readable($networking_jsondir))$configError='Keine config.json gefunden oder nicht lesbar: '.$networking_jsondir.' – Standard geladen. Geräte im Editor anlegen.';
+if(!is_readable($networking_jsondir))$configError='Keine config.json gefunden – Standard geladen. Mit „+ Gerät" starten und speichern.';
 header('Content-Type: text/html; charset=utf-8');
 ?>
 <!doctype html>
@@ -126,7 +161,40 @@ header('Content-Type: text/html; charset=utf-8');
 <style>
 body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#eef1f5;color:#111827;overflow:hidden}
 #appShell{display:flex;flex-direction:column;height:100vh;width:100vw}
-#topBar{flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:8px 12px 8px 64px;border-bottom:1px solid #d1d5db;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.06);min-height:36px}
+#topBar{flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid #d1d5db;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.06);min-height:36px;flex-wrap:wrap}
+#topLinks{display:flex;gap:10px;font-size:12px}
+#topLinks a{color:#6b7280;text-decoration:none}
+#topLinks a:hover{color:#0070ff;text-decoration:underline}
+button{font-family:inherit}
+.btnPrimary{border-radius:6px;border:1px solid #0070ff;background:#0070ff;color:#fff;font-size:13px;padding:7px 14px;cursor:pointer;white-space:nowrap}
+.btnPrimary:hover{background:#0050c0}
+.btnPrimary.dirtyState{background:#c2410c;border-color:#c2410c}
+.btnGhost{border-radius:6px;border:1px solid #c6cbd3;background:#fff;color:#111827;font-size:13px;padding:6px 12px;cursor:pointer;white-space:nowrap}
+.btnGhost:hover{background:#eef1f5;border-color:#9ca3af}
+.btnDanger{border-radius:6px;border:1px solid #dc2626;background:#fff;color:#dc2626;font-size:13px;padding:6px 12px;cursor:pointer;white-space:nowrap}
+.btnDanger:hover{background:#fee2e2}
+.btnSmall{font-size:11px;padding:4px 8px}
+.notice{position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:40;font-size:13px;padding:8px 14px;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+.notice.ok{background:#dcfce7;border:1px solid #16a34a;color:#14532d}
+.notice.err{background:#fee2e2;border:1px solid #dc2626;color:#7f1d1d}
+#connectBanner{position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:40;display:none;align-items:center;gap:10px;font-size:13px;font-weight:bold;color:#7c2d12;background:#ffedd5;border:1px solid #ea580c;padding:8px 14px;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+.modalBackdrop{position:fixed;inset:0;background:rgba(17,24,39,.55);display:none;align-items:center;justify-content:center;z-index:1000;padding:12px;box-sizing:border-box}
+.modalPanel{background:#fff;border-radius:10px;border:1px solid #d1d5db;box-shadow:0 12px 40px rgba(0,0,0,.25);max-width:640px;width:100%;max-height:92vh;display:flex;flex-direction:column}
+.modalHeader{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid #e5e7eb}
+.modalTitle{font-size:16px;font-weight:bold}
+.modalBody{padding:12px 14px;overflow:auto}
+.modalFooter{display:flex;justify-content:space-between;gap:8px;padding:12px 14px;border-top:1px solid #e5e7eb}
+.formRow{display:flex;gap:10px;margin-bottom:10px}
+.formCol{flex:1}
+label{display:block;font-size:12px;font-weight:bold;margin-bottom:4px;color:#374151}
+input[type="text"],input[type="number"],textarea,select{width:100%;box-sizing:border-box;border-radius:6px;border:1px solid #c6cbd3;font-size:13px;padding:7px 8px;font-family:inherit;background:#fff;color:#111827}
+input[type="text"]:focus,input[type="number"]:focus,textarea:focus,select:focus{border-color:#0070ff;outline:none;box-shadow:0 0 0 2px rgba(0,112,255,.15)}
+textarea{min-height:64px;resize:vertical}
+.typeRow{display:flex;gap:8px;align-items:center}
+.typeRow select{flex:1}
+#devTypeIcon{width:30px;height:30px;border-radius:6px;border:1px solid #e5e7eb;background:#f9fafb;flex:0 0 auto}
+#connModalInfo{font-size:13px;color:#374151;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:8px 10px;margin-bottom:10px}
+#overlayActions{display:flex;gap:6px;margin:6px 0}
 #topBarTitle{font-size:15px;font-weight:bold;white-space:nowrap}
 #searchWrapper{position:relative;flex:1;max-width:520px}
 #searchInput{width:100%;box-sizing:border-box;border-radius:999px;border:1px solid #c6cbd3;background:#f9fafb;color:#111827;font-size:13px;padding:6px 28px 6px 28px;outline:none}
@@ -167,46 +235,16 @@ body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#eef1f5;color:#1
 .deviceHostname{font-size:13px;font-weight:bold}
 .deviceIp{font-size:11px;color:#4b5563}
 .deviceType{font-size:11px;color:#6b7280}
-.nodeLabel{font-size:9px;font-family:Arial,Helvetica,sans-serif;fill:#111827}
-.nodeLabelIp{font-size:8px;fill:#6b7280}
-.nodeGroupLabel{font-size:10px;font-weight:bold;fill:#4b5563}
+.nodeLabel{font-size:10px;font-family:Arial,Helvetica,sans-serif;font-weight:bold;fill:#111827;paint-order:stroke;stroke:#f6f8fb;stroke-width:3px;stroke-linejoin:round}
+.nodeLabelIp{font-size:8.5px;fill:#4b5563;paint-order:stroke;stroke:#f6f8fb;stroke-width:3px;stroke-linejoin:round}
+.nodeGroupLabel{font-size:11px;font-weight:bold;fill:#ffffff}
 .nodeCircle{cursor:pointer}
 .nodeCircle:hover{stroke:#0070ff;stroke-width:1.6}
 .groupRect{fill:#fff;stroke:#d1d5db;stroke-width:1}
 @media(max-width:720px){#detailOverlay{left:8px;right:8px;width:auto;max-height:60vh}}
-.fk-menu-btn{position:fixed;top:8px;left:12px;z-index:999999;background:#111;color:#fff;border:none;padding:7px 12px;font-size:17px;line-height:1;cursor:pointer;border-radius:6px}
-.fk-menu-btn:hover{background:#333}
-.fk-menu-overlay{position:fixed;inset:0;display:none;z-index:999998}
-.fk-menu-overlay.is-visible{display:block}
-.fk-menu-backdrop{position:absolute;inset:0;background:rgba(0,0,0,0.55)}
-.fk-menu-panel{position:absolute;top:0;left:0;width:260px;height:100%;background:#fff;padding:20px;box-sizing:border-box;transform:translateX(-100%);transition:transform .25s ease-out;display:flex;flex-direction:column}
-.fk-menu-overlay.is-visible .fk-menu-panel{transform:translateX(0)}
-.fk-menu-close{background:none;border:none;font-size:28px;cursor:pointer;margin-left:auto;display:block;color:#000}
-.fk-menu-nav{margin-top:20px;display:flex;flex-direction:column;gap:12px;flex:1;min-height:0;overflow:auto}
-.fk-menu-link{text-decoration:none;font-size:18px;color:#222}
-.fk-menu-link:hover{color:#0070ff}
-.fk-menu-bottom{margin-top:auto}
 </style>
 </head>
 <body>
-<button class="fk-menu-btn" data-fk-menu-btn>☰</button>
-<div class="fk-menu-overlay" data-fk-menu-overlay aria-hidden="true">
-<div class="fk-menu-backdrop" data-fk-menu-close></div>
-<div class="fk-menu-panel">
-<button class="fk-menu-close" data-fk-menu-close>×</button>
-<nav class="fk-menu-nav">
-
-<a href="" target="_self" class="fk-menu-link">index.php</a>
-<a href="?_page=edit" target="_blank" class="fk-menu-link">edit.php</a>
-<a href="?_page=raw" target="_blank" class="fk-menu-link">config.json</a>
-<a href="?_page=license" target="_blank" class="fk-menu-link fk-menu-bottom">LICENSE</a>
-
-</nav>
-</div>
-</div>
-<script>
-(function(){"use strict";var btn=document.querySelector("[data-fk-menu-btn]");var overlay=document.querySelector("[data-fk-menu-overlay]");var closers=document.querySelectorAll("[data-fk-menu-close]");var isOpen=false;if(!btn||!overlay)return;function openMenu(){if(isOpen)return;isOpen=true;overlay.classList.add("is-visible");overlay.setAttribute("aria-hidden","false");document.documentElement.style.overflow="hidden"}function closeMenu(){if(!isOpen)return;isOpen=false;overlay.classList.remove("is-visible");overlay.setAttribute("aria-hidden","true");document.documentElement.style.overflow=""}btn.addEventListener("click",function(e){e.stopPropagation();isOpen?closeMenu():openMenu()});closers.forEach(function(el){el.addEventListener("click",closeMenu)});overlay.addEventListener("click",function(e){var panel=overlay.querySelector(".fk-menu-panel");if(panel&&!panel.contains(e.target))closeMenu()});document.addEventListener("keydown",function(e){if(e.key==="Escape")closeMenu()})})();
-</script>
 <div id="appShell">
 <div id="topBar">
 <div id="topBarTitle"><?=$networking_heading?></div>
@@ -215,6 +253,12 @@ body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#eef1f5;color:#1
 <input id="searchInput" type="search" autocomplete="off" placeholder="Suche: Hostname, IP, Typ, VLAN, Ziel, Notiz">
 </div>
 <div id="searchMeta"><span id="searchCountDevices">0</span> Geräte · <span id="searchCountConns">0</span> Verbindungen</div>
+<button type="button" class="btnGhost" id="btnAddDevice">+ Gerät</button>
+<button type="button" class="btnPrimary" id="btnSave">Speichern</button>
+<div id="topLinks">
+<a href="?_page=raw" target="_blank" rel="noopener noreferrer">config.json</a>
+<a href="?_page=license" target="_blank" rel="noopener noreferrer">LICENSE</a>
+</div>
 </div>
 <div id="main">
 <div id="mapArea">
@@ -225,6 +269,92 @@ body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#eef1f5;color:#1
 </div>
 </div>
 <?php if($configError):?><div class="error"><?php echo h($configError);?></div><?php endif;?>
+<?php if($save_msg!==''):?><div class="notice ok" id="saveNotice"><?php echo h($save_msg);?></div><?php endif;?>
+<?php if($save_err!==''):?><div class="notice err" id="saveNotice"><?php echo h($save_err);?></div><?php endif;?>
+<div id="connectBanner">Verbindungsmodus: Ziel-Gerät anklicken <button type="button" class="btnGhost" id="btnConnectCancel">Abbrechen (ESC)</button></div>
+<form id="saveForm" method="post" autocomplete="off">
+<input type="hidden" name="action" value="save">
+<input type="hidden" name="csrf" value="<?php echo h($csrfToken);?>">
+<input type="hidden" name="config_json" id="config_json">
+</form>
+<div class="modalBackdrop" id="deviceModal">
+<div class="modalPanel">
+<div class="modalHeader">
+<div class="modalTitle" id="deviceModalTitle"></div>
+<button type="button" class="btnGhost" id="btnDeviceClose">Schließen</button>
+</div>
+<div class="modalBody">
+<div class="formRow">
+<div class="formCol">
+<label for="devHostname">Hostname</label>
+<input type="text" id="devHostname">
+</div>
+<div class="formCol">
+<label for="devIP">IP-Adresse</label>
+<input type="text" id="devIP" placeholder="z.B. 10.0.1.10">
+</div>
+</div>
+<div class="formRow">
+<div class="formCol">
+<label for="devType">Typ</label>
+<div class="typeRow">
+<img id="devTypeIcon" alt="" src="">
+<select id="devType"></select>
+</div>
+</div>
+<div class="formCol">
+<label for="devKind">Art</label>
+<select id="devKind">
+<option value="Physisch">Physisch</option>
+<option value="VM">VM</option>
+<option value="Extern">Extern</option>
+</select>
+</div>
+</div>
+<div class="formRow">
+<div class="formCol">
+<label for="devNotes">Notizen</label>
+<textarea id="devNotes"></textarea>
+</div>
+</div>
+</div>
+<div class="modalFooter">
+<button type="button" class="btnDanger" id="btnDeviceDelete">Gerät löschen</button>
+<button type="button" class="btnPrimary" id="btnDeviceApply">Übernehmen</button>
+</div>
+</div>
+</div>
+<div class="modalBackdrop" id="connModal">
+<div class="modalPanel">
+<div class="modalHeader">
+<div class="modalTitle">Verbindung erstellen</div>
+<button type="button" class="btnGhost" id="btnConnClose">Schließen</button>
+</div>
+<div class="modalBody">
+<div id="connModalInfo"></div>
+<div class="formRow">
+<div class="formCol">
+<label for="connService">Dienst</label>
+<select id="connService"></select>
+</div>
+<div class="formCol">
+<label for="connPort">Port (optional)</label>
+<input type="number" id="connPort" min="1" max="65535" placeholder="443">
+</div>
+</div>
+<div class="formRow">
+<div class="formCol">
+<label for="connNotes">Notizen (optional)</label>
+<input type="text" id="connNotes">
+</div>
+</div>
+</div>
+<div class="modalFooter">
+<button type="button" class="btnGhost" id="btnConnCancel">Abbrechen</button>
+<button type="button" class="btnPrimary" id="btnConnApply">Erstellen</button>
+</div>
+</div>
+</div>
 <div id="detailOverlay">
 <div id="detailOverlayHeader">
 <div>
@@ -240,6 +370,7 @@ body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#eef1f5;color:#1
 const appConfig=<?php echo json_encode($config,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);?>;
 const iconBase=<?php echo json_encode($networking_iconbase,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);?>;
 const deviceData=Array.isArray(appConfig.devices)?appConfig.devices:[];
+appConfig.devices=deviceData;
 </script>
 <script>
 (function(){
@@ -256,6 +387,10 @@ let mapOffsetY=0;
 let isPanning=false;
 let lastPanX=0;
 let lastPanY=0;
+let dirty=false;
+let editingIndex=null;
+let connectSourceIndex=null;
+let pendingConn=null;
 function tt(v){if(v===null||v===undefined)return'';return String(v);}
 function getVlanKey(ip){
 if(typeof ip!=='string')return'Unbekannt';
@@ -322,12 +457,20 @@ const typeCatalog={
 'IoT-Gerät':{icon:'iot.svg',color:'#9333ea'},
 'PC':{icon:'pc.svg',color:'#4338ca'},
 'Laptop':{icon:'laptop.svg',color:'#57534e'},
+'Smartphone':{icon:'smartphone.svg',color:'#db2777'},
+'Tablet':{icon:'tablet.svg',color:'#be123c'},
+'Hotspot':{icon:'hotspot.svg',color:'#ea580c'},
+'Internet/Provider':{icon:'internet.svg',color:'#075985'},
 'Gerät (Sonstiges)':{icon:'device.svg',color:'#6b7280'}
 };
 const typeIconDefaults=[
 {file:'firewall.svg',keys:['firewall','fortigate','fortinet','paloalto','palo-alto','sophos','pfsense','opnsense','checkpoint','watchguard','asa','fw']},
 {file:'vpn.svg',keys:['vpn','ipsec']},
-{file:'router.svg',keys:['router','mikrotik','edgerouter','fritz','gateway','gw']},
+{file:'internet.svg',keys:['internet','provider','isp','wan','uplink','glasfaser','dsl']},
+{file:'hotspot.svg',keys:['hotspot','mifi','tethering']},
+{file:'smartphone.svg',keys:['smartphone','handy','iphone','android','mobil']},
+{file:'tablet.svg',keys:['tablet','ipad']},
+{file:'router.svg',keys:['router','mikrotik','edgerouter','fritz','tplink','tp-link','gateway','gw']},
 {file:'switch.svg',keys:['switch','catalyst','procurve','nexus','cisco','sw']},
 {file:'wifi.svg',keys:['wifi','wlan','accesspoint','access-point','access point','access','unifi','capwap','ap']},
 {file:'hypervisor.svg',keys:['esxi','vmware','vcenter','proxmox','hyperv','hyper-v','xen','kvm','hypervisor']},
@@ -542,12 +685,21 @@ if(!Object.prototype.hasOwnProperty.call(groupBBox,gKey))continue;
 const b=groupBBox[gKey];
 const marginX=40;
 const marginY=40;
-let x=b.minX-marginX;
-let y=b.minY-marginY;
 let width=(b.maxX-b.minX)+2*marginX;
 let height=(b.maxY-b.minY)+2*marginY;
 if(width<80)width=80;
 if(height<90)height=90;
+const labelWidth=gKey.length*6.8+20;
+if(width<labelWidth)width=labelWidth;
+let x=(b.minX+b.maxX)/2-width/2;
+let y=b.minY-marginY;
+let gFill='#ffffff';
+let gStroke='#cbd5e1';
+if(appConfig&&appConfig.groupStyles&&appConfig.groupStyles[gKey]){
+const st=appConfig.groupStyles[gKey];
+if(st.fill)gFill=String(st.fill);
+if(st.stroke)gStroke=String(st.stroke);
+}
 const rect=document.createElementNS('http://www.w3.org/2000/svg','rect');
 rect.setAttribute('x',String(x));
 rect.setAttribute('y',String(y));
@@ -555,15 +707,28 @@ rect.setAttribute('width',String(width));
 rect.setAttribute('height',String(height));
 rect.setAttribute('rx','10');
 rect.setAttribute('class','groupRect');
-if(appConfig&&appConfig.groupStyles&&appConfig.groupStyles[gKey]){
-const st=appConfig.groupStyles[gKey];
-if(st.fill)rect.setAttribute('fill',String(st.fill));
-if(st.stroke)rect.setAttribute('stroke',String(st.stroke));
-}
+rect.setAttribute('fill',gFill);
+rect.setAttribute('fill-opacity','0.75');
+rect.setAttribute('stroke',gStroke);
 rectLayer.appendChild(rect);
+const band=document.createElementNS('http://www.w3.org/2000/svg','rect');
+band.setAttribute('x',String(x));
+band.setAttribute('y',String(y));
+band.setAttribute('width',String(width));
+band.setAttribute('height','22');
+band.setAttribute('rx','10');
+band.setAttribute('fill',gStroke==='#d1d5db'?'#94a3b8':gStroke);
+rectLayer.appendChild(band);
+const bandFix=document.createElementNS('http://www.w3.org/2000/svg','rect');
+bandFix.setAttribute('x',String(x));
+bandFix.setAttribute('y',String(y+12));
+bandFix.setAttribute('width',String(width));
+bandFix.setAttribute('height','10');
+bandFix.setAttribute('fill',gStroke==='#d1d5db'?'#94a3b8':gStroke);
+rectLayer.appendChild(bandFix);
 const gl=document.createElementNS('http://www.w3.org/2000/svg','text');
-gl.setAttribute('x',String(x+6));
-gl.setAttribute('y',String(y+14));
+gl.setAttribute('x',String(x+9));
+gl.setAttribute('y',String(y+15));
 gl.setAttribute('text-anchor','start');
 gl.setAttribute('class','nodeGroupLabel');
 gl.textContent=gKey;
@@ -685,7 +850,7 @@ labelIp.setAttribute('text-anchor','middle');
 labelIp.setAttribute('class','nodeLabelIp');
 labelIp.textContent=ip;
 g.appendChild(labelIp);
-g.addEventListener('click',function(ev){ev.stopPropagation();selectDevice(i);});
+g.addEventListener('click',function(ev){ev.stopPropagation();handleNodeClick(i);});
 nodesLayer.appendChild(g);
 }
 updateMapTransform();
@@ -810,6 +975,20 @@ tWrap.appendChild(ipEl);
 tWrap.appendChild(typeEl);
 header.appendChild(tWrap);
 body.appendChild(header);
+const actions=document.createElement('div');
+actions.id='overlayActions';
+function mkActBtn(label,cls,fn){
+const b=document.createElement('button');
+b.type='button';
+b.className=cls+' btnSmall';
+b.textContent=label;
+b.addEventListener('click',fn);
+actions.appendChild(b);
+}
+mkActBtn('Bearbeiten','btnGhost',function(){openDeviceModal(deviceIndex);});
+mkActBtn('Verbinden','btnGhost',function(){startConnectMode(deviceIndex);});
+mkActBtn('Löschen','btnDanger',function(){deleteDevice(deviceIndex);});
+body.appendChild(actions);
 const stInfo=document.createElement('div');
 stInfo.className='sectionTitle';
 stInfo.textContent='Geräteinformationen';
@@ -1058,6 +1237,15 @@ nb.appendChild(nt);
 nb.appendChild(nc);
 body.appendChild(nb);
 }
+const actions=document.createElement('div');
+actions.id='overlayActions';
+const delBtn=document.createElement('button');
+delBtn.type='button';
+delBtn.className='btnDanger btnSmall';
+delBtn.textContent='Verbindung löschen';
+delBtn.addEventListener('click',function(){deleteConnection(deviceIndex,connIndex);});
+actions.appendChild(delBtn);
+body.appendChild(actions);
 overlay.style.display='block';
 }
 function hideOverlay(){
@@ -1077,6 +1265,237 @@ const srcIdx=e.src;
 selectedDeviceIndex=srcIdx;
 renderConnectionOverlay(srcIdx,e.connIndex);
 buildLayout();
+}
+function markDirty(){
+dirty=true;
+const b=document.getElementById('btnSave');
+b.classList.add('dirtyState');
+b.textContent='Speichern *';
+}
+function rebuildAll(){
+buildIndexes();
+applyFilterFromSearch();
+buildLayout();
+}
+function serviceKeys(){
+const keys=[];
+const labels=appConfig.serviceLabels&&typeof appConfig.serviceLabels==='object'?appConfig.serviceLabels:{};
+for(const k in labels){
+if(!Object.prototype.hasOwnProperty.call(labels,k))continue;
+if(k==='DEFAULT')continue;
+keys.push(k);
+}
+keys.sort();
+return keys;
+}
+function fillServiceSelect(){
+const sel=document.getElementById('connService');
+sel.innerHTML='';
+const first=document.createElement('option');
+first.value='';
+first.textContent='– Dienst –';
+sel.appendChild(first);
+for(const k of serviceKeys()){
+const o=document.createElement('option');
+o.value=k;
+const lbl=resolveServiceLabel(k);
+o.textContent=lbl!==k?k+' · '+lbl:k;
+sel.appendChild(o);
+}
+}
+function updateTypeIcon(){
+document.getElementById('devTypeIcon').src=getTypeIconPath(document.getElementById('devType').value);
+}
+function fillTypeSelect(current){
+const sel=document.getElementById('devType');
+sel.innerHTML='';
+let found=false;
+for(const k in typeCatalog){
+if(!Object.prototype.hasOwnProperty.call(typeCatalog,k))continue;
+const o=document.createElement('option');
+o.value=k;
+o.textContent=k;
+if(k===current){o.selected=true;found=true;}
+sel.appendChild(o);
+}
+if(current&&!found){
+const o=document.createElement('option');
+o.value=current;
+o.textContent=current+' (bestehend)';
+o.selected=true;
+sel.appendChild(o);
+}
+updateTypeIcon();
+}
+function openDeviceModal(index){
+const isNew=index===null||index===undefined||index<0;
+editingIndex=isNew?null:index;
+const title=document.getElementById('deviceModalTitle');
+if(isNew){
+title.textContent='Neues Gerät';
+document.getElementById('devHostname').value='';
+document.getElementById('devIP').value='';
+fillTypeSelect('Gerät (Sonstiges)');
+document.getElementById('devKind').value='Physisch';
+document.getElementById('devNotes').value='';
+}else{
+const d=deviceData[index]||{};
+title.textContent='Gerät bearbeiten';
+document.getElementById('devHostname').value=tt(d.Hostname||d.hostname||'');
+document.getElementById('devIP').value=tt(d.IP||d.ip||'');
+fillTypeSelect(tt(d.Type||d.type||''));
+const kind=tt(d.Kind||d.kind||'');
+document.getElementById('devKind').value=kind==='VM'||kind==='Extern'?kind:'Physisch';
+document.getElementById('devNotes').value=tt(d.Notes||d.notes||'');
+}
+hideOverlay();
+document.getElementById('deviceModal').style.display='flex';
+}
+function closeDeviceModal(){
+document.getElementById('deviceModal').style.display='none';
+editingIndex=null;
+}
+function applyDeviceModal(){
+const hn=document.getElementById('devHostname').value.trim();
+const ip=document.getElementById('devIP').value.trim();
+if(hn===''&&ip===''){alert('Mindestens Hostname oder IP-Adresse muss gesetzt sein.');return;}
+const dev=editingIndex!==null&&deviceData[editingIndex]?deviceData[editingIndex]:{};
+if(hn!=='')dev.Hostname=hn;else delete dev.Hostname;
+if(ip!=='')dev.IP=ip;else delete dev.IP;
+dev.Type=document.getElementById('devType').value;
+dev.Kind=document.getElementById('devKind').value;
+const notes=document.getElementById('devNotes').value.trim();
+if(notes!=='')dev.Notes=notes;else delete dev.Notes;
+if(!Array.isArray(dev.Connections))dev.Connections=[];
+if(editingIndex===null)deviceData.push(dev);
+closeDeviceModal();
+markDirty();
+rebuildAll();
+}
+function deleteDevice(index){
+const d=deviceData[index]||{};
+const hn=tt(d.Hostname||d.hostname||'');
+const ip=tt(d.IP||d.ip||'');
+if(!confirm('Gerät „'+(hn||ip)+'" wirklich löschen? Verbindungen von und zu diesem Gerät werden entfernt.'))return;
+deviceData.splice(index,1);
+for(const other of deviceData){
+if(!other||!Array.isArray(other.Connections))continue;
+other.Connections=other.Connections.filter(function(c){
+const tg=tt((c||{}).target||'');
+return!(tg!==''&&((hn!==''&&tg.toLowerCase()===hn.toLowerCase())||(ip!==''&&tg===ip)));
+});
+}
+selectedDeviceIndex=null;
+hideOverlay();
+markDirty();
+rebuildAll();
+}
+function startConnectMode(srcIndex){
+connectSourceIndex=srcIndex;
+hideOverlay();
+document.getElementById('connectBanner').style.display='flex';
+}
+function cancelConnectMode(){
+connectSourceIndex=null;
+document.getElementById('connectBanner').style.display='none';
+}
+function handleNodeClick(i){
+if(connectSourceIndex!==null){
+if(i===connectSourceIndex)return;
+openConnModal(connectSourceIndex,i);
+return;
+}
+selectDevice(i);
+}
+function openConnModal(src,tgt){
+pendingConn={src:src,tgt:tgt};
+const s=deviceData[src]||{};
+const t=deviceData[tgt]||{};
+const sName=tt(s.Hostname||s.hostname||s.IP||s.ip||'?');
+const tName=tt(t.Hostname||t.hostname||t.IP||t.ip||'?');
+document.getElementById('connModalInfo').textContent=sName+' → '+tName;
+fillServiceSelect();
+document.getElementById('connPort').value='';
+document.getElementById('connNotes').value='';
+document.getElementById('connModal').style.display='flex';
+}
+function closeConnModal(){
+document.getElementById('connModal').style.display='none';
+pendingConn=null;
+}
+function applyConnModal(){
+if(!pendingConn)return;
+const d=deviceData[pendingConn.src];
+if(!d)return;
+if(!Array.isArray(d.Connections))d.Connections=[];
+const t=deviceData[pendingConn.tgt]||{};
+const hn=tt(t.Hostname||t.hostname||'');
+const ip=tt(t.IP||t.ip||'');
+const obj={};
+const svc=document.getElementById('connService').value;
+if(svc!=='')obj.connType=svc;
+obj.target=hn||ip;
+obj.targetType=hn!==''?'hostname':'ip';
+const portStr=document.getElementById('connPort').value.trim();
+if(portStr!==''){
+const n=Number(portStr);
+if(!Number.isNaN(n)&&n>0)obj.port=n;
+}
+const notes=document.getElementById('connNotes').value.trim();
+if(notes!=='')obj.Notes=notes;
+d.Connections.push(obj);
+const srcIdx=pendingConn.src;
+closeConnModal();
+cancelConnectMode();
+markDirty();
+rebuildAll();
+selectDevice(srcIdx);
+}
+function deleteConnection(devIndex,connIndex){
+const d=deviceData[devIndex];
+if(!d||!Array.isArray(d.Connections))return;
+if(!confirm('Verbindung wirklich löschen?'))return;
+d.Connections.splice(connIndex,1);
+markDirty();
+rebuildAll();
+selectDevice(devIndex);
+}
+function saveConfigNow(){
+document.getElementById('config_json').value=JSON.stringify(appConfig);
+dirty=false;
+document.getElementById('saveForm').submit();
+}
+function setupManage(){
+document.getElementById('btnAddDevice').addEventListener('click',function(){openDeviceModal(null);});
+document.getElementById('btnSave').addEventListener('click',saveConfigNow);
+document.getElementById('btnDeviceClose').addEventListener('click',closeDeviceModal);
+document.getElementById('btnDeviceApply').addEventListener('click',applyDeviceModal);
+document.getElementById('btnDeviceDelete').addEventListener('click',function(){
+if(editingIndex===null){closeDeviceModal();return;}
+const idx=editingIndex;
+closeDeviceModal();
+deleteDevice(idx);
+});
+document.getElementById('devType').addEventListener('change',updateTypeIcon);
+document.getElementById('btnConnClose').addEventListener('click',closeConnModal);
+document.getElementById('btnConnCancel').addEventListener('click',closeConnModal);
+document.getElementById('btnConnApply').addEventListener('click',applyConnModal);
+document.getElementById('btnConnectCancel').addEventListener('click',cancelConnectMode);
+document.getElementById('deviceModal').addEventListener('click',function(e){if(e.target===this)closeDeviceModal();});
+document.getElementById('connModal').addEventListener('click',function(e){if(e.target===this)closeConnModal();});
+document.addEventListener('keydown',function(e){
+if(e.key!=='Escape')return;
+closeDeviceModal();
+closeConnModal();
+cancelConnectMode();
+});
+window.addEventListener('beforeunload',function(e){
+if(!dirty)return;
+e.preventDefault();
+e.returnValue='';
+});
+const notice=document.getElementById('saveNotice');
+if(notice)setTimeout(function(){notice.style.display='none';},2500);
 }
 function setupSearch(){
 const input=document.getElementById('searchInput');
@@ -1142,6 +1561,7 @@ setupSearch();
 setupOverlay();
 setupPanZoom();
 setupResize();
+setupManage();
 }
 document.addEventListener('DOMContentLoaded',init);
 })();
