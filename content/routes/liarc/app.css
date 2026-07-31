@@ -305,3 +305,28 @@ pre { background: var(--bg3); padding: 10px; border-radius: 10px; overflow-x: au
     }
     .pagehead .ic { width: 24px; height: 24px; }
 }
+
+.rangebar { display: flex; gap: 6px; padding: 0 0 12px; overflow-x: auto; scrollbar-width: none; }
+.rangebar::-webkit-scrollbar { display: none; }
+
+.findbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 4px 12px;
+    margin-bottom: 12px;
+}
+.findbar .ic { opacity: .5; }
+.findbar input { border: none; background: none; padding: 8px 0; }
+
+.iconbtn.copy .ic { width: 15px; height: 15px; opacity: .5; vertical-align: -2px; }
+.iconbtn.copy { padding: 3px 5px; }
+.iconbtn.copy.on .ic { opacity: 1; }
+
+.addrow.editing { border-color: var(--accent); }
+a.iconbtn { display: inline-flex; align-items: center; justify-content: center; }
+.btlabel { margin-left: 8px; }
+.iconbtn.wide.dl { justify-content: center; }
