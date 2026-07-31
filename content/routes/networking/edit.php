@@ -1,5 +1,9 @@
 <?php
 session_start();
+if(!preg_match('~^([/\\\\]|[A-Za-z]:)~',(string)$networking_jsondir)){
+$__base=isset($appBaseDir)&&is_string($appBaseDir)&&$appBaseDir!==''?$appBaseDir:((string)($_SERVER['SCRIPT_FILENAME']??'')!==''?dirname((string)$_SERVER['SCRIPT_FILENAME']):(string)getcwd());
+$networking_jsondir=rtrim($__base,'/\\').DIRECTORY_SEPARATOR.$networking_jsondir;
+}
 function h($s){return htmlspecialchars((string)$s,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');}
 function defaultConfig(){
 return[

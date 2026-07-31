@@ -1,4 +1,8 @@
 <?php
+if(!preg_match('~^([/\\\\]|[A-Za-z]:)~',(string)$networking_jsondir)){
+$__base=isset($appBaseDir)&&is_string($appBaseDir)&&$appBaseDir!==''?$appBaseDir:((string)($_SERVER['SCRIPT_FILENAME']??'')!==''?dirname((string)$_SERVER['SCRIPT_FILENAME']):(string)getcwd());
+$networking_jsondir=rtrim($__base,'/\\').DIRECTORY_SEPARATOR.$networking_jsondir;
+}
 function h($s){return htmlspecialchars((string)$s,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');}
 function defaultConfig(){
 return[
@@ -102,7 +106,7 @@ header('Content-Type: text/html; charset=utf-8');
 <style>
 body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#eef1f5;color:#111827;overflow:hidden}
 #appShell{display:flex;flex-direction:column;height:100vh;width:100vw}
-#topBar{flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid #d1d5db;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+#topBar{flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:8px 12px 8px 64px;border-bottom:1px solid #d1d5db;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.06);min-height:36px}
 #topBarTitle{font-size:15px;font-weight:bold;white-space:nowrap}
 #searchWrapper{position:relative;flex:1;max-width:520px}
 #searchInput{width:100%;box-sizing:border-box;border-radius:999px;border:1px solid #c6cbd3;background:#f9fafb;color:#111827;font-size:13px;padding:6px 28px 6px 28px;outline:none}
@@ -115,7 +119,7 @@ body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#eef1f5;color:#1
 #mapSvg{width:100%;height:100%;display:block;background-color:#f6f8fb;background-image:radial-gradient(#d8dee9 1px,transparent 1px);background-size:22px 22px;cursor:grab}
 #mapSvg:active{cursor:grabbing}
 .error{position:fixed;left:60px;top:60px;z-index:30;color:#900;font-weight:bold;background:#fff;border:1px solid #dc2626;border-radius:6px;padding:8px 10px;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.12)}
-#detailOverlay{position:fixed;top:56px;right:10px;width:340px;max-height:64vh;z-index:20;background:#fff;border-radius:8px;border:1px solid #d1d5db;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:8px 10px;font-size:11px;color:#111827;display:none;overflow:auto}
+#detailOverlay{position:fixed;top:62px;right:10px;width:340px;max-height:64vh;z-index:20;background:#fff;border-radius:8px;border:1px solid #d1d5db;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:8px 10px;font-size:11px;color:#111827;display:none;overflow:auto}
 #detailOverlayHeader{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
 #detailOverlayTitle{font-weight:bold;font-size:12px}
 #detailOverlaySubtitle{font-size:10px;color:#4b5563;margin-top:1px}
@@ -150,16 +154,18 @@ body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#eef1f5;color:#1
 .nodeCircle:hover{stroke:#0070ff;stroke-width:1.6}
 .groupRect{fill:#fff;stroke:#d1d5db;stroke-width:1}
 @media(max-width:720px){#detailOverlay{left:8px;right:8px;width:auto;max-height:60vh}}
-.fk-menu-btn{position:fixed;top:6px;left:10px;z-index:999999;background:#111;color:#fff;border:none;padding:6px 12px;font-size:18px;cursor:pointer;border-radius:4px}
+.fk-menu-btn{position:fixed;top:8px;left:12px;z-index:999999;background:#111;color:#fff;border:none;padding:7px 12px;font-size:17px;line-height:1;cursor:pointer;border-radius:6px}
+.fk-menu-btn:hover{background:#333}
 .fk-menu-overlay{position:fixed;inset:0;display:none;z-index:999998}
 .fk-menu-overlay.is-visible{display:block}
 .fk-menu-backdrop{position:absolute;inset:0;background:rgba(0,0,0,0.55)}
-.fk-menu-panel{position:absolute;top:0;left:0;width:260px;height:100%;background:#fff;padding:20px;box-sizing:border-box;transform:translateX(-100%);transition:transform .25s ease-out}
+.fk-menu-panel{position:absolute;top:0;left:0;width:260px;height:100%;background:#fff;padding:20px;box-sizing:border-box;transform:translateX(-100%);transition:transform .25s ease-out;display:flex;flex-direction:column}
 .fk-menu-overlay.is-visible .fk-menu-panel{transform:translateX(0)}
 .fk-menu-close{background:none;border:none;font-size:28px;cursor:pointer;margin-left:auto;display:block;color:#000}
-.fk-menu-nav{margin-top:20px;display:flex;flex-direction:column;gap:12px}
+.fk-menu-nav{margin-top:20px;display:flex;flex-direction:column;gap:12px;flex:1;min-height:0;overflow:auto}
 .fk-menu-link{text-decoration:none;font-size:18px;color:#222}
 .fk-menu-link:hover{color:#0070ff}
+.fk-menu-bottom{margin-top:auto}
 </style>
 </head>
 <body>
@@ -173,8 +179,7 @@ body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#eef1f5;color:#1
 <a href="" target="_self" class="fk-menu-link">index.php</a>
 <a href="?_page=edit" target="_blank" class="fk-menu-link">edit.php</a>
 <a href="?_page=raw" target="_blank" class="fk-menu-link">config.json</a>
-</br></br></br></br></br></br></br></br></br></br></br></br></br></br></br></br></br></br></br></br>
-<a href="?_page=license" target="_blank" class="fk-menu-link">LICENSE</a>
+<a href="?_page=license" target="_blank" class="fk-menu-link fk-menu-bottom">LICENSE</a>
 
 </nav>
 </div>
@@ -184,7 +189,6 @@ body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#eef1f5;color:#1
 </script>
 <div id="appShell">
 <div id="topBar">
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 <div id="topBarTitle"><?=$networking_heading?></div>
 <div id="searchWrapper">
 <div id="searchIcon">🔍</div>
