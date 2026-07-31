@@ -1,5 +1,9 @@
 <?php
 session_start();
+if(!preg_match('~^([/\\\\]|[A-Za-z]:)~',(string)$networking_jsondir)){
+$__base=isset($appBaseDir)&&is_string($appBaseDir)&&$appBaseDir!==''?$appBaseDir:((string)($_SERVER['SCRIPT_FILENAME']??'')!==''?dirname((string)$_SERVER['SCRIPT_FILENAME']):(string)getcwd());
+$networking_jsondir=rtrim($__base,'/\\').DIRECTORY_SEPARATOR.$networking_jsondir;
+}
 function h($s){return htmlspecialchars((string)$s,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');}
 function defaultConfig(){
 return[
@@ -57,6 +61,26 @@ if(!isset($base['connectionStyles']['DEFAULT']['color']))$base['connectionStyles
 if(!isset($base['groupStyles']['Unbekannt'])||!is_array($base['groupStyles']['Unbekannt']))$base['groupStyles']['Unbekannt']=['fill'=>'#ffffff','stroke'=>'#d1d5db'];
 return $base;
 }
+function nw_ip_in_cidr($ip,$cidr){
+$p=explode('/',(string)$cidr);
+if(count($p)!==2)return false;
+$bits=(int)$p[1];
+$base=ip2long($p[0]);
+$val=ip2long((string)$ip);
+if($base===false||$val===false||$bits<0||$bits>32)return false;
+if($bits===0)return true;
+$mask=$bits===32?0xFFFFFFFF:(~((1<<(32-$bits))-1))&0xFFFFFFFF;
+return(($base&$mask)===($val&$mask));
+}
+function nw_ip_covered($ip,$vlanGroups){
+foreach($vlanGroups as $k=>$label){
+$k=(string)$k;
+if($k==='')continue;
+if(strpos($k,'/')!==false){if(nw_ip_in_cidr($ip,$k))return true;}
+elseif(strpos($ip,$k)===0)return true;
+}
+return false;
+}
 function applyDevicesDerivedDefaults(&$cfg){
 foreach($cfg['devices'] as $item){
 if(!is_array($item))continue;
@@ -66,7 +90,7 @@ $parts=explode('.',$ip);
 if(count($parts)===4){
 $valid=true;
 for($i=0;$i<4;$i++){if(!ctype_digit($parts[$i])||(int)$parts[$i]>255){$valid=false;break;}}
-if($valid){
+if($valid&&!nw_ip_covered($ip,$cfg['vlanGroups'])){
 $prefix=$parts[0].'.'.$parts[1].'.'.$parts[2].'.';
 if(!array_key_exists($prefix,$cfg['vlanGroups']))$cfg['vlanGroups'][$prefix]=$prefix.'0/24';
 }
@@ -90,6 +114,14 @@ return $cfg;
 function save_config($path,$cfg){
 $cfg=normalizeConfig($cfg);
 applyDevicesDerivedDefaults($cfg);
+foreach($cfg['devices'] as &$d){
+if(!is_array($d))continue;
+if(isset($d['Connections'])&&is_array($d['Connections'])){
+foreach($d['Connections'] as &$c){if(is_array($c))unset($c['direction']);}
+unset($c);
+}
+}
+unset($d);
 $json=json_encode($cfg,JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
 if($json===false)return false;
 $dir=dirname($path);
@@ -173,6 +205,11 @@ textarea{min-height:64px;resize:vertical}
 #connTable th,#connTable td{border-bottom:1px solid #e5e7eb;padding:5px 4px;text-align:left}
 #connTable th{background:#f9fafb;font-weight:bold;font-size:11px;color:#4b5563}
 #connTable input,#connTable select{font-size:12px;padding:5px 6px}
+.connHint{font-size:11px;font-weight:normal;color:#6b7280;margin-left:6px}
+.typeRow{display:flex;gap:8px;align-items:center}
+.typeRow select{flex:1}
+#devTypeIcon{width:30px;height:30px;border-radius:6px;border:1px solid #e5e7eb;background:#f9fafb;flex:0 0 auto}
+.targetCell{display:flex;flex-direction:column;gap:4px}
 #deviceOverlayFooter{display:flex;justify-content:space-between;gap:8px;padding:12px 14px;border-top:1px solid #e5e7eb}
 @media(max-width:720px){
 #deviceOverlayPanel{max-width:96vw}
@@ -208,6 +245,7 @@ textarea{min-height:64px;resize:vertical}
 <th>Hostname</th>
 <th>IP-Adresse</th>
 <th>Typ</th>
+<th>Art</th>
 <th>Notizen</th>
 <th>Verbindungen</th>
 <th class="actions">Aktionen</th>
@@ -217,16 +255,6 @@ textarea{min-height:64px;resize:vertical}
 </table>
 <div class="emptyHint" id="emptyHint" style="display:none">Noch keine Geräte. Mit „+ Neues Gerät" starten, danach „Konfiguration speichern".</div>
 </div>
-<datalist id="typeList">
-<option value="Firewall"><option value="FortiGate"><option value="Router"><option value="Switch"><option value="Access-Point">
-<option value="Windows-Server"><option value="Linux-Server"><option value="Domain-Controller"><option value="DNS-Server"><option value="DHCP-Server">
-<option value="ESXi"><option value="Proxmox"><option value="Hyper-V"><option value="NAS"><option value="Storage">
-<option value="Backup-Server"><option value="Datenbank-Server"><option value="Mail-Server"><option value="Web-Server"><option value="Proxy">
-<option value="VPN-Gateway"><option value="Monitoring"><option value="Drucker"><option value="Kamera"><option value="VoIP-Telefon">
-<option value="USV"><option value="PC"><option value="Laptop"><option value="IoT">
-</datalist>
-<datalist id="connTypeList"></datalist>
-<datalist id="targetList"></datalist>
 <form id="saveForm" method="post" autocomplete="off">
 <input type="hidden" name="action" value="save">
 <input type="hidden" name="csrf" value="<?php echo h($csrfToken);?>">
@@ -253,27 +281,38 @@ textarea{min-height:64px;resize:vertical}
 <div class="formRow">
 <div class="formCol">
 <label for="devType">Typ</label>
-<input type="text" id="devType" list="typeList" placeholder="z.B. FortiGate, Switch, Windows-Server">
+<div class="typeRow">
+<img id="devTypeIcon" alt="" src="">
+<select id="devType"></select>
 </div>
+</div>
+<div class="formCol">
+<label for="devKind">Art</label>
+<select id="devKind">
+<option value="Physisch">Physisch</option>
+<option value="VM">VM</option>
+<option value="Extern">Extern</option>
+</select>
+</div>
+</div>
+<div class="formRow">
 <div class="formCol">
 <label for="devNotes">Notizen (Gerät)</label>
 <textarea id="devNotes"></textarea>
 </div>
 </div>
 <div id="connHeaderRow">
-<div>Verbindungen</div>
+<div>Verbindungen <span class="connHint">immer Quelle → Ziel · Gegenrichtung beim Zielgerät anlegen</span></div>
 <button type="button" class="btnGhost" id="btnAddConn">Verbindung hinzufügen</button>
 </div>
 <table id="connTable">
 <thead>
 <tr>
-<th>Typ</th>
-<th>Zieltyp</th>
+<th>Dienst</th>
 <th>Ziel</th>
-<th>Richtung</th>
-<th>Port</th>
+<th style="width:90px">Port</th>
 <th>Notizen</th>
-<th>Aktion</th>
+<th style="width:44px">Aktion</th>
 </tr>
 </thead>
 <tbody id="connTableBody"></tbody>
@@ -287,6 +326,7 @@ textarea{min-height:64px;resize:vertical}
 </div>
 <script>
 const appConfigInitial=<?php echo $appConfigJson;?>;
+const iconBase=<?php echo json_encode($networking_iconbase,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);?>;
 </script>
 <script>
 (function(){
@@ -308,32 +348,104 @@ const btnDeviceDelete=document.getElementById('btnDeviceDelete');
 const devHostname=document.getElementById('devHostname');
 const devIP=document.getElementById('devIP');
 const devType=document.getElementById('devType');
+const devTypeIcon=document.getElementById('devTypeIcon');
+const devKind=document.getElementById('devKind');
 const devNotes=document.getElementById('devNotes');
 const connTableBody=document.getElementById('connTableBody');
 const btnAddConn=document.getElementById('btnAddConn');
 function tt(v){if(v===null||v===undefined)return'';return String(v);}
-function fillConnTypeList(){
-const dl=document.getElementById('connTypeList');
-dl.innerHTML='';
+const deviceTypes=[
+{v:'Firewall',icon:'firewall.svg'},
+{v:'Router',icon:'router.svg'},
+{v:'Switch',icon:'switch.svg'},
+{v:'Access Point',icon:'wifi.svg'},
+{v:'Server',icon:'server.svg'},
+{v:'Windows-Server',icon:'windows.svg'},
+{v:'Linux-Server',icon:'linux.svg'},
+{v:'Domain-Controller',icon:'ad.svg'},
+{v:'DNS-Server',icon:'dns.svg'},
+{v:'DHCP-Server',icon:'dhcp.svg'},
+{v:'Hypervisor',icon:'hypervisor.svg'},
+{v:'Storage/NAS',icon:'storage.svg'},
+{v:'Backup',icon:'backup.svg'},
+{v:'Datenbank',icon:'database.svg'},
+{v:'Mail-Server',icon:'mail.svg'},
+{v:'Web-Server',icon:'web.svg'},
+{v:'Proxy',icon:'proxy.svg'},
+{v:'VPN-Gateway',icon:'vpn.svg'},
+{v:'RDP/Terminal-Server',icon:'rdp.svg'},
+{v:'Monitoring',icon:'monitoring.svg'},
+{v:'Drucker',icon:'printer.svg'},
+{v:'Kamera',icon:'camera.svg'},
+{v:'VoIP-Telefon',icon:'phone.svg'},
+{v:'USV',icon:'ups.svg'},
+{v:'Cloud-Dienst',icon:'cloud.svg'},
+{v:'IoT-Gerät',icon:'iot.svg'},
+{v:'PC',icon:'pc.svg'},
+{v:'Laptop',icon:'laptop.svg'},
+{v:'Gerät (Sonstiges)',icon:'device.svg'}
+];
+function typeIconFor(t){
+for(const e of deviceTypes){if(e.v===t)return iconBase+e.icon;}
+return iconBase+'device.svg';
+}
+function updateTypeIcon(){devTypeIcon.src=typeIconFor(devType.value);}
+function fillTypeSelect(current){
+devType.innerHTML='';
+let found=false;
+for(const e of deviceTypes){
+const o=document.createElement('option');
+o.value=e.v;
+o.textContent=e.v;
+if(e.v===current){o.selected=true;found=true;}
+devType.appendChild(o);
+}
+if(current&&!found){
+const o=document.createElement('option');
+o.value=current;
+o.textContent=current+' (bestehend)';
+o.selected=true;
+devType.appendChild(o);
+}
+updateTypeIcon();
+}
+function serviceKeys(){
+const keys=[];
 const labels=appConfig.serviceLabels&&typeof appConfig.serviceLabels==='object'?appConfig.serviceLabels:{};
 for(const k in labels){
 if(!Object.prototype.hasOwnProperty.call(labels,k))continue;
 if(k==='DEFAULT')continue;
-const opt=document.createElement('option');
-opt.value=k;
-dl.appendChild(opt);
+keys.push(k);
 }
+keys.sort();
+return keys;
 }
-function fillTargetList(){
-const dl=document.getElementById('targetList');
-dl.innerHTML='';
+function deviceTargetOptions(){
+const opts=[];
+const alias={};
+const devices=appConfig.devices||[];
+for(let i=0;i<devices.length;i++){
+if(editingIndex!==null&&i===editingIndex)continue;
+const d=devices[i]||{};
+const hn=tt(d.Hostname||d.hostname||'');
+const ip=tt(d.IP||d.ip||'');
+const val=hn||ip;
+if(!val)continue;
+opts.push({value:val,label:hn&&ip?hn+' ('+ip+')':val});
+if(ip)alias[ip]=val;
+if(hn)alias[hn]=val;
+}
+return{opts:opts,alias:alias};
+}
+function targetTypeFor(target){
 const devices=appConfig.devices||[];
 for(const d of devices){
-const hn=tt((d||{}).Hostname||(d||{}).hostname||'');
-const ip=tt((d||{}).IP||(d||{}).ip||'');
-if(hn){const o=document.createElement('option');o.value=hn;dl.appendChild(o);}
-if(ip){const o=document.createElement('option');o.value=ip;dl.appendChild(o);}
+if(tt((d||{}).Hostname||(d||{}).hostname||'')===target)return'hostname';
 }
+for(const d of devices){
+if(tt((d||{}).IP||(d||{}).ip||'')===target)return'ip';
+}
+return'';
 }
 function renderDeviceTable(){
 deviceTableBody.innerHTML='';
@@ -352,6 +464,9 @@ tr.appendChild(tdIP);
 const tdType=document.createElement('td');
 tdType.textContent=tt(d.Type||d.type||'');
 tr.appendChild(tdType);
+const tdKind=document.createElement('td');
+tdKind.textContent=tt(d.Kind||d.kind||'')||'–';
+tr.appendChild(tdKind);
 const tdNotes=document.createElement('td');
 const notesStr=tt(d.Notes||d.notes||'').trim();
 if(notesStr!==''){
@@ -387,12 +502,12 @@ deviceTableBody.appendChild(tr);
 function openDeviceEditor(index){
 const isNew=index===null||index===undefined||index<0;
 editingIndex=isNew?null:index;
-fillTargetList();
 if(isNew){
 overlayTitle.textContent='Neues Gerät';
 devHostname.value='';
 devIP.value='';
-devType.value='';
+fillTypeSelect('Gerät (Sonstiges)');
+devKind.value='Physisch';
 devNotes.value='';
 connTableBody.innerHTML='';
 }else{
@@ -400,7 +515,9 @@ const d=appConfig.devices[index]||{};
 overlayTitle.textContent='Gerät bearbeiten';
 devHostname.value=tt(d.Hostname||d.hostname||'');
 devIP.value=tt(d.IP||d.ip||'');
-devType.value=tt(d.Type||d.type||'');
+fillTypeSelect(tt(d.Type||d.type||''));
+const kind=tt(d.Kind||d.kind||'');
+devKind.value=kind==='VM'||kind==='Extern'?kind:'Physisch';
 devNotes.value=tt(d.Notes||d.notes||'');
 connTableBody.innerHTML='';
 const conns=Array.isArray(d.Connections)?d.Connections:[];
@@ -436,42 +553,36 @@ return sel;
 function addConnectionRow(conn){
 const c=conn||{};
 const tr=document.createElement('tr');
-function mkInput(initial){
-const inp=document.createElement('input');
-inp.type='text';
-inp.value=tt(initial||'');
-return inp;
-}
 const tdType=document.createElement('td');
-const inpType=mkInput(c.connType||c.service||'');
-inpType.setAttribute('list','connTypeList');
-inpType.placeholder='z.B. HTTPS, SSH';
+const svcOpts=[{value:'',label:'– Dienst –'}];
+for(const k of serviceKeys())svcOpts.push({value:k,label:k});
+const inpType=mkSelect(svcOpts,tt(c.connType||c.service||''));
 tdType.appendChild(inpType);
 tr.appendChild(tdType);
-const tdTType=document.createElement('td');
-const inpTType=mkSelect([
-{value:'',label:'auto'},
-{value:'hostname',label:'Hostname'},
-{value:'ip',label:'IP'}
-],c.targetType||'');
-tdTType.appendChild(inpTType);
-tr.appendChild(tdTType);
 const tdTarget=document.createElement('td');
-const inpTarget=mkInput(c.target||'');
-inpTarget.setAttribute('list','targetList');
-inpTarget.placeholder='Hostname oder IP';
-tdTarget.appendChild(inpTarget);
+const targetWrap=document.createElement('div');
+targetWrap.className='targetCell';
+const tOpts=[{value:'',label:'– Ziel wählen –'}];
+const devOpts=deviceTargetOptions();
+for(const o of devOpts.opts)tOpts.push(o);
+tOpts.push({value:'__extern__',label:'Extern / manuell…'});
+const curTarget=tt(c.target||'');
+let selVal='';
+if(curTarget!==''){
+if(devOpts.alias[curTarget])selVal=devOpts.alias[curTarget];
+else selVal='__extern__';
+}
+const selTarget=mkSelect(tOpts,selVal);
+const inpManual=document.createElement('input');
+inpManual.type='text';
+inpManual.placeholder='Hostname oder IP (extern)';
+inpManual.value=selVal==='__extern__'?curTarget:'';
+inpManual.style.display=selVal==='__extern__'?'block':'none';
+selTarget.addEventListener('change',function(){inpManual.style.display=selTarget.value==='__extern__'?'block':'none';});
+targetWrap.appendChild(selTarget);
+targetWrap.appendChild(inpManual);
+tdTarget.appendChild(targetWrap);
 tr.appendChild(tdTarget);
-const tdDir=document.createElement('td');
-let dirInitial=tt(c.direction||'');
-if(dirInitial===''||dirInitial==='both')dirInitial='bidirectional';
-const inpDir=mkSelect([
-{value:'bidirectional',label:'beide Richtungen'},
-{value:'source-to-target',label:'Quelle → Ziel'},
-{value:'target-to-source',label:'Ziel → Quelle'}
-],dirInitial);
-tdDir.appendChild(inpDir);
-tr.appendChild(tdDir);
 const tdPort=document.createElement('td');
 const inpPort=document.createElement('input');
 inpPort.type='number';
@@ -486,7 +597,9 @@ if(!Number.isNaN(n))inpPort.value=String(n);
 tdPort.appendChild(inpPort);
 tr.appendChild(tdPort);
 const tdNotes=document.createElement('td');
-const inpNotes=mkInput(c.Notes||c.notes||'');
+const inpNotes=document.createElement('input');
+inpNotes.type='text';
+inpNotes.value=tt(c.Notes||c.notes||'');
 tdNotes.appendChild(inpNotes);
 tr.appendChild(tdNotes);
 const tdAct=document.createElement('td');
@@ -497,7 +610,7 @@ btnRemove.textContent='X';
 btnRemove.addEventListener('click',function(){tr.remove();});
 tdAct.appendChild(btnRemove);
 tr.appendChild(tdAct);
-tr._connInputs={inpType,inpTType,inpTarget,inpDir,inpPort,inpNotes};
+tr._connInputs={inpType,selTarget,inpManual,inpPort,inpNotes};
 connTableBody.appendChild(tr);
 }
 function collectConnections(){
@@ -506,18 +619,19 @@ const list=[];
 for(const tr of rows){
 const refs=tr._connInputs;
 if(!refs)continue;
-const connType=refs.inpType.value.trim();
-const targetType=refs.inpTType.value;
-const target=refs.inpTarget.value.trim();
-const direction=refs.inpDir.value;
+const connType=refs.inpType.value;
+let target=refs.selTarget.value;
+if(target==='__extern__')target=refs.inpManual.value.trim();
 const portStr=refs.inpPort.value.trim();
 const notes=refs.inpNotes.value.trim();
 if(connType===''&&target===''&&notes==='')continue;
 const obj={};
 if(connType!=='')obj.connType=connType;
-if(targetType!=='')obj.targetType=targetType;
-if(target!=='')obj.target=target;
-if(direction!==''&&direction!=='bidirectional')obj.direction=direction;
+if(target!==''){
+obj.target=target;
+const ttg=targetTypeFor(target);
+if(ttg!=='')obj.targetType=ttg;
+}
 if(portStr!==''){
 const n=Number(portStr);
 if(!Number.isNaN(n)&&n>0)obj.port=n;
@@ -530,13 +644,15 @@ return list;
 function saveDeviceFromEditor(){
 const hn=devHostname.value.trim();
 const ip=devIP.value.trim();
-const type=devType.value.trim();
+const type=devType.value;
+const kind=devKind.value;
 const notes=devNotes.value.trim();
 if(hn===''&&ip===''){alert('Mindestens Hostname oder IP-Adresse muss gesetzt sein.');return;}
 const dev={};
 if(hn!=='')dev.Hostname=hn;
 if(ip!=='')dev.IP=ip;
 if(type!=='')dev.Type=type;
+dev.Kind=kind;
 if(notes!=='')dev.Notes=notes;
 dev.Connections=collectConnections();
 if(editingIndex===null){
@@ -570,7 +686,7 @@ closeDeviceEditor();
 btnAddConn.addEventListener('click',function(){addConnectionRow(null);});
 overlay.addEventListener('click',function(e){if(e.target===overlay)closeDeviceEditor();});
 document.addEventListener('keydown',function(e){if(e.key==='Escape')closeDeviceEditor();});
-fillConnTypeList();
+devType.addEventListener('change',updateTypeIcon);
 renderDeviceTable();
 })();
 </script>

@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 ///////////////////////
-$networking_datadir='networking'; #daten-ordner: relativ zu dieser datei, absoluter pfad auch möglich
+$networking_datadir='networking'; #daten-ordner: name relativ zur seite, absoluter pfad auch möglich
 $networking_title='NETWORKING';
 $networking_heading='NETWORKING by Florian';
 $networking_editortitle='Netzwerk Editor';
@@ -9,7 +9,8 @@ $networking_iconbase='https://raw.githubusercontent.com/florianthepro/pages/main
 $networking_icon='https://raw.githubusercontent.com/florianthepro/pages/main/content/media/networking/index.svg';
 $networking_editoricon='https://raw.githubusercontent.com/florianthepro/pages/main/content/media/networking/edit.svg';
 $networking_editorheading=$networking_heading.' '.$networking_editortitle;
-if(!preg_match('~^([/\\\\]|[A-Za-z]:)~',$networking_datadir))$networking_datadir=__DIR__.DIRECTORY_SEPARATOR.$networking_datadir;
+$networking_basedir=dirname((string)($_SERVER['SCRIPT_FILENAME']??__FILE__)); #ort dieser seite
+if(!preg_match('~^([/\\\\]|[A-Za-z]:)~',$networking_datadir))$networking_datadir=$networking_basedir.DIRECTORY_SEPARATOR.$networking_datadir;
 $networking_jsondir=$networking_datadir.DIRECTORY_SEPARATOR.'config.json';
 
 $sharedVars=get_defined_vars();
