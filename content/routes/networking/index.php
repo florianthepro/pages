@@ -59,12 +59,6 @@ return $base;
 function applyDevicesDerivedDefaults(&$cfg){
 foreach($cfg['devices'] as $item){
 if(!is_array($item))continue;
-$type=(string)($item['Type']??$item['type']??'');
-if($type!==''&&!array_key_exists($type,$cfg['typeIcons'])){
-$slug=strtolower(trim(preg_replace('/[^A-Za-z0-9]+/','-',$type),'-'));
-if($slug==='')$slug='typ';
-$cfg['typeIcons'][$type]=$slug.'.svg';
-}
 $ip=(string)($item['IP']??$item['ip']??'');
 if($ip!==''){
 $parts=explode('.',$ip);
@@ -106,22 +100,22 @@ header('Content-Type: text/html; charset=utf-8');
 <link rel="icon" type="image/svg+xml" href="<?=$networking_icon?>">
 <title><?=$networking_title?></title>
 <style>
-body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f3f4f6;color:#111827;overflow:hidden}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#eef1f5;color:#111827;overflow:hidden}
 #appShell{display:flex;flex-direction:column;height:100vh;width:100vw}
-#topBar{flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:6px 10px;border-bottom:1px solid #d1d5db;background:#e5e7eb}
+#topBar{flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid #d1d5db;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.06)}
 #topBarTitle{font-size:15px;font-weight:bold;white-space:nowrap}
-#searchWrapper{position:relative;flex:1}
-#searchInput{width:100%;box-sizing:border-box;border-radius:3px;border:1px solid #9ca3af;background:#fff;color:#111827;font-size:13px;padding:5px 28px 5px 24px;outline:none}
-#searchInput:focus{border-color:#0070ff}
-#searchIcon{position:absolute;left:6px;top:50%;transform:translateY(-50%);font-size:12px;color:#6b7280}
-#searchMeta{font-size:11px;color:#4b5563;white-space:nowrap}
+#searchWrapper{position:relative;flex:1;max-width:520px}
+#searchInput{width:100%;box-sizing:border-box;border-radius:999px;border:1px solid #c6cbd3;background:#f9fafb;color:#111827;font-size:13px;padding:6px 28px 6px 28px;outline:none}
+#searchInput:focus{border-color:#0070ff;background:#fff;box-shadow:0 0 0 2px rgba(0,112,255,.15)}
+#searchIcon{position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:12px;color:#6b7280}
+#searchMeta{font-size:12px;color:#4b5563;white-space:nowrap}
 #main{flex:1 1 auto;display:flex;min-height:0;min-width:0}
-#mapArea{flex:1 1 auto;position:relative;min-width:0;min-height:0;background:#e5e7eb}
+#mapArea{flex:1 1 auto;position:relative;min-width:0;min-height:0}
 #mapShell{position:absolute;inset:0}
-#mapSvg{width:100%;height:100%;display:block;background:#e5e7eb;cursor:grab}
+#mapSvg{width:100%;height:100%;display:block;background-color:#f6f8fb;background-image:radial-gradient(#d8dee9 1px,transparent 1px);background-size:22px 22px;cursor:grab}
 #mapSvg:active{cursor:grabbing}
-.error{position:fixed;left:60px;top:56px;z-index:30;color:#900;font-weight:bold;background:#fff;border:1px solid #900;border-radius:3px;padding:6px 8px;font-size:12px}
-#detailOverlay{position:fixed;top:52px;right:8px;width:340px;max-height:60vh;z-index:20;background:#fff;border-radius:3px;border:1px solid #d1d5db;box-shadow:0 4px 12px rgba(0,0,0,.2);padding:6px 8px;font-size:11px;color:#111827;display:none;overflow:auto}
+.error{position:fixed;left:60px;top:60px;z-index:30;color:#900;font-weight:bold;background:#fff;border:1px solid #dc2626;border-radius:6px;padding:8px 10px;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.12)}
+#detailOverlay{position:fixed;top:56px;right:10px;width:340px;max-height:64vh;z-index:20;background:#fff;border-radius:8px;border:1px solid #d1d5db;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:8px 10px;font-size:11px;color:#111827;display:none;overflow:auto}
 #detailOverlayHeader{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
 #detailOverlayTitle{font-weight:bold;font-size:12px}
 #detailOverlaySubtitle{font-size:10px;color:#4b5563;margin-top:1px}
@@ -257,13 +251,64 @@ if(ip.startsWith(pref))return String(appConfig.vlanGroups[pref]);
 }
 return getVlanKey(ip);
 }
+const typeIconDefaults=[
+{file:'firewall.svg',keys:['firewall','fortigate','fortinet','paloalto','palo-alto','sophos','pfsense','opnsense','checkpoint','watchguard','asa','fw']},
+{file:'router.svg',keys:['router','mikrotik','edgerouter','fritz','gateway','gw']},
+{file:'switch.svg',keys:['switch','catalyst','procurve','nexus','cisco','sw']},
+{file:'wifi.svg',keys:['wifi','wlan','accesspoint','access-point','access point','access','unifi','capwap','ap']},
+{file:'hypervisor.svg',keys:['esxi','vmware','vcenter','proxmox','hyperv','hyper-v','xen','kvm','hypervisor']},
+{file:'ad.svg',keys:['active-directory','activedirectory','domaincontroller','domain-controller','domain','ldap','ad','dc']},
+{file:'dns.svg',keys:['dns']},
+{file:'dhcp.svg',keys:['dhcp']},
+{file:'mail.svg',keys:['mail','smtp','exchange','imap','pop3']},
+{file:'proxy.svg',keys:['proxy']},
+{file:'vpn.svg',keys:['vpn','ipsec']},
+{file:'rdp.svg',keys:['rdp','terminalserver','terminal-server','ts']},
+{file:'database.svg',keys:['database','mssql','oracle','mysql','postgres','mariadb','sql','db']},
+{file:'storage.svg',keys:['storage','netapp','synology','qnap','iscsi','nas','san']},
+{file:'backup.svg',keys:['backup','veeam']},
+{file:'monitoring.svg',keys:['monitoring','zabbix','prtg','nagios','grafana','snmp','syslog']},
+{file:'printer.svg',keys:['printer','drucker','print','mfp']},
+{file:'camera.svg',keys:['camera','kamera','cctv','nvr']},
+{file:'phone.svg',keys:['voip','telefon','phone','pbx']},
+{file:'ups.svg',keys:['usv','ups']},
+{file:'cloud.svg',keys:['cloud','azure','aws']},
+{file:'iot.svg',keys:['iot','sensor']},
+{file:'laptop.svg',keys:['laptop','notebook']},
+{file:'pc.svg',keys:['workstation','desktop','client','pc']},
+{file:'web.svg',keys:['webserver','web-server','nginx','apache','iis','web','www']},
+{file:'windows.svg',keys:['windows','win']},
+{file:'linux.svg',keys:['linux','ubuntu','debian','centos','redhat','suse','nfs']},
+{file:'server.svg',keys:['server','host','srv','vm']}
+];
+function getDefaultTypeIcon(type){
+const low=type.toLowerCase();
+const tokens=low.split(/[^a-z0-9]+/).filter(Boolean);
+for(const e of typeIconDefaults){
+for(const k of e.keys){
+if(k.length<=3){if(tokens.indexOf(k)!==-1)return e.file;}
+else if(low.indexOf(k)!==-1)return e.file;
+}
+}
+return'device.svg';
+}
 function getTypeIconPath(type){
 const typ=tt(type);
 let file='';
 if(appConfig&&appConfig.typeIcons&&appConfig.typeIcons[typ])file=String(appConfig.typeIcons[typ]);
-if(file==='')return'';
+if(file===''){
+if(typ==='')return'';
+file=getDefaultTypeIcon(typ);
+}
 if(/^https?:\/\//i.test(file))return file;
 return iconBase+file;
+}
+function resolveDirectionLabel(v){
+const s=tt(v);
+if(s===''||s==='bidirectional'||s==='both')return'beide Richtungen';
+if(s==='source-to-target')return'Quelle → Ziel';
+if(s==='target-to-source')return'Ziel → Quelle';
+return s;
 }
 function getTypeColor(type){
 const typ=tt(type);
@@ -299,11 +344,20 @@ deviceIndexByHostname={};
 deviceIndexByIp={};
 for(let i=0;i<deviceData.length;i++){
 const d=deviceData[i]||{};
-const hn=tt(d.Hostname||d.hostname||'');
+const hn=tt(d.Hostname||d.hostname||'').toLowerCase();
 if(hn)deviceIndexByHostname[hn]=i;
 const ip=tt(d.IP||d.ip||'');
 if(ip)deviceIndexByIp[ip]=i;
 }
+}
+function resolveTargetIndex(ttg,tg){
+if(!tg)return null;
+const tgLow=tg.toLowerCase();
+if(ttg==='hostname'&&Object.prototype.hasOwnProperty.call(deviceIndexByHostname,tgLow))return deviceIndexByHostname[tgLow];
+if(ttg==='ip'&&Object.prototype.hasOwnProperty.call(deviceIndexByIp,tg))return deviceIndexByIp[tg];
+if(Object.prototype.hasOwnProperty.call(deviceIndexByIp,tg))return deviceIndexByIp[tg];
+if(Object.prototype.hasOwnProperty.call(deviceIndexByHostname,tgLow))return deviceIndexByHostname[tgLow];
+return null;
 }
 function buildLayout(){
 const groups={};
@@ -353,12 +407,9 @@ const c=conns[ci]||{};
 const ttg=tt(c.targetType||'');
 const tg=tt(c.target||'');
 const ct=tt(c.connType||c.service||'Unbekannt');
-let tgtIndex=null;
-if(ttg==='hostname'&&tg&&Object.prototype.hasOwnProperty.call(deviceIndexByHostname,tg))tgtIndex=deviceIndexByHostname[tg];
-else if(ttg==='ip'&&tg&&Object.prototype.hasOwnProperty.call(deviceIndexByIp,tg))tgtIndex=deviceIndexByIp[tg];
-else if(!ttg&&tg&&Object.prototype.hasOwnProperty.call(deviceIndexByIp,tg))tgtIndex=deviceIndexByIp[tg];
-if(tgtIndex!==null&&tgtIndex!==undefined&&nodePositions[i]&&nodePositions[tgtIndex]){
-edges.push({src:i,tgt:tgtIndex,connIndex:ci,connType:ct});
+const tgtIndex=resolveTargetIndex(ttg,tg);
+if(tgtIndex!==null&&nodePositions[i]&&nodePositions[tgtIndex]){
+edges.push({src:i,tgt:tgtIndex,connIndex:ci,connType:ct,direction:tt(c.direction||'')});
 }
 }
 }
@@ -377,6 +428,28 @@ const rectLayer=document.createElementNS('http://www.w3.org/2000/svg','g');
 const groupLabelLayer=document.createElementNS('http://www.w3.org/2000/svg','g');
 const edgesLayer=document.createElementNS('http://www.w3.org/2000/svg','g');
 const nodesLayer=document.createElementNS('http://www.w3.org/2000/svg','g');
+const defs=document.createElementNS('http://www.w3.org/2000/svg','defs');
+content.appendChild(defs);
+const markerIds={};
+function markerFor(color){
+if(markerIds[color])return markerIds[color];
+const id='arrow-'+Object.keys(markerIds).length;
+const marker=document.createElementNS('http://www.w3.org/2000/svg','marker');
+marker.setAttribute('id',id);
+marker.setAttribute('markerWidth','7');
+marker.setAttribute('markerHeight','7');
+marker.setAttribute('refX','5.5');
+marker.setAttribute('refY','3');
+marker.setAttribute('orient','auto-start-reverse');
+marker.setAttribute('markerUnits','userSpaceOnUse');
+const mp=document.createElementNS('http://www.w3.org/2000/svg','path');
+mp.setAttribute('d','M0 0 L6 3 L0 6 Z');
+mp.setAttribute('fill',color);
+marker.appendChild(mp);
+defs.appendChild(marker);
+markerIds[color]=id;
+return id;
+}
 content.appendChild(rectLayer);
 content.appendChild(edgesLayer);
 content.appendChild(nodesLayer);
@@ -411,7 +484,7 @@ rect.setAttribute('x',String(x));
 rect.setAttribute('y',String(y));
 rect.setAttribute('width',String(width));
 rect.setAttribute('height',String(height));
-rect.setAttribute('rx','4');
+rect.setAttribute('rx','10');
 rect.setAttribute('class','groupRect');
 if(appConfig&&appConfig.groupStyles&&appConfig.groupStyles[gKey]){
 const st=appConfig.groupStyles[gKey];
@@ -466,6 +539,15 @@ const mx=(x1+x2)/2;
 const my=(y1+y2)/2;
 const cx=mx+nx*offset;
 const cy=my+ny*offset;
+const gap=20;
+let d1x=cx-x1,d1y=cy-y1;
+let l1=Math.sqrt(d1x*d1x+d1y*d1y)||1;
+x1=x1+d1x/l1*gap;
+y1=y1+d1y/l1*gap;
+let d2x=cx-x2,d2y=cy-y2;
+let l2=Math.sqrt(d2x*d2x+d2y*d2y)||1;
+x2=x2+d2x/l2*gap;
+y2=y2+d2y/l2*gap;
 const dStr='M '+x1+' '+y1+' Q '+cx+' '+cy+' '+x2+' '+y2;
 const hit=document.createElementNS('http://www.w3.org/2000/svg','path');
 hit.setAttribute('d',dStr);
@@ -479,11 +561,15 @@ hit.addEventListener('click',function(ev){ev.stopPropagation();selectConnectionB
 edgesLayer.appendChild(hit);
 const path=document.createElementNS('http://www.w3.org/2000/svg','path');
 path.setAttribute('d',dStr);
-path.setAttribute('stroke',getConnectionColor(e.connType));
+const edgeColor=getConnectionColor(e.connType);
+path.setAttribute('stroke',edgeColor);
 path.setAttribute('stroke-width','1.4');
 path.setAttribute('stroke-opacity','0.9');
 path.setAttribute('fill','none');
 path.style.pointerEvents='none';
+const dirVal=tt(e.direction);
+if(dirVal==='source-to-target')path.setAttribute('marker-end','url(#'+markerFor(edgeColor)+')');
+else if(dirVal==='target-to-source')path.setAttribute('marker-start','url(#'+markerFor(edgeColor)+')');
 edgesLayer.appendChild(path);
 }
 for(let i=0;i<deviceData.length;i++){
@@ -696,13 +782,7 @@ const sh=tt(sd.Hostname||sd.hostname||'');
 const sConns=Array.isArray(sd.Connections)?sd.Connections:[];
 for(let ci=0;ci<sConns.length;ci++){
 const c2=sConns[ci]||{};
-const tgtType=tt(c2.targetType||'');
-const tgt=tt(c2.target||'');
-let matches=false;
-if(tgtType==='hostname'&&tgt===hnName)matches=true;
-else if(tgtType==='ip'&&tgt===ip)matches=true;
-else if(!tgtType&&tgt===ip)matches=true;
-if(matches)incomingConns.push({sourceIndex:sIndex,connIndex:ci,conn:c2,sourceHostname:sh});
+if(resolveTargetIndex(tt(c2.targetType||''),tt(c2.target||''))===deviceIndex)incomingConns.push({sourceIndex:sIndex,connIndex:ci,conn:c2,sourceHostname:sh});
 }
 }
 if(conns.length>0){
@@ -726,8 +806,7 @@ const tgt=tt(c.target||'');
 const tgtEl=document.createElement('div');
 tgtEl.className='connectionTarget';
 if(tgt){
-if(tgtType==='hostname'&&Object.prototype.hasOwnProperty.call(deviceIndexByHostname,tgt))tgtEl.textContent=tgt+' · Zielgerät vorhanden';
-else if((tgtType==='ip'||!tgtType)&&Object.prototype.hasOwnProperty.call(deviceIndexByIp,tgt))tgtEl.textContent=tgt+' · Zielgerät per IP vorhanden';
+if(resolveTargetIndex(tgtType,tgt)!==null)tgtEl.textContent=tgt+' · Zielgerät vorhanden';
 else tgtEl.textContent=tgt;
 }else tgtEl.textContent='Ziel unbekannt';
 left.appendChild(typeLbl);
@@ -740,7 +819,7 @@ dot.className='connectionColorDot';
 dot.style.backgroundColor=getConnectionColor(connType);
 badge.appendChild(dot);
 const dir=document.createElement('span');
-dir.textContent=tt(c.direction||'bidirectional');
+dir.textContent=resolveDirectionLabel(c.direction);
 badge.appendChild(dir);
 right.appendChild(badge);
 head.appendChild(left);
@@ -797,7 +876,7 @@ dot.className='connectionColorDot';
 dot.style.backgroundColor=getConnectionColor(connType);
 badge.appendChild(dot);
 const dir=document.createElement('span');
-dir.textContent=tt(c.direction||'bidirectional');
+dir.textContent=resolveDirectionLabel(c.direction);
 badge.appendChild(dir);
 right.appendChild(badge);
 head.appendChild(left);
@@ -856,7 +935,7 @@ const dot2=document.createElement('div');
 dot2.className='badgeDot';
 dirBadge.appendChild(dot2);
 const lbl2=document.createElement('span');
-lbl2.textContent=tt(c.direction||'bidirectional');
+lbl2.textContent=resolveDirectionLabel(c.direction);
 dirBadge.appendChild(lbl2);
 badges.appendChild(dirBadge);
 body.innerHTML='';
