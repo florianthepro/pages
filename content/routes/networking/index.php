@@ -34,6 +34,7 @@ return[
 'ORACLE-DB'=>'Oracle Datenbank',
 'SMB'=>'Dateifreigaben (SMB)',
 'CAPWAP'=>'CAPWAP/WLAN',
+'Kabel'=>'Kabel (physisch)',
 'DEFAULT'=>'Verbindung'
 ],
 'connectionStyles'=>[
@@ -313,6 +314,27 @@ textarea{min-height:64px;resize:vertical}
 </div>
 <div class="formRow">
 <div class="formCol">
+<label for="devRange">IP-Bereich (optional, z.B. Hypervisor mit VMs)</label>
+<input type="text" id="devRange" placeholder="z.B. 10.0.2.0/24">
+</div>
+</div>
+<div id="fwSection" style="display:none">
+<div class="formRow">
+<div class="formCol">
+<label for="devFwPolicy">Firewall-Regel</label>
+<select id="devFwPolicy">
+<option value="allow">Alles erlauben</option>
+<option value="block">Alles blockieren (außer Freigaben)</option>
+</select>
+</div>
+<div class="formCol">
+<label for="devFwPorts">Freigegebene Ports (Komma-getrennt)</label>
+<input type="text" id="devFwPorts" placeholder="z.B. 443, 53">
+</div>
+</div>
+</div>
+<div class="formRow">
+<div class="formCol">
 <label for="devNotes">Notizen</label>
 <textarea id="devNotes"></textarea>
 </div>
@@ -333,6 +355,15 @@ textarea{min-height:64px;resize:vertical}
 <div class="modalBody">
 <div id="connModalInfo"></div>
 <div class="formRow">
+<div class="formCol">
+<label for="connKind">Verbindungsart</label>
+<select id="connKind">
+<option value="service">Dienst (logisch)</option>
+<option value="cable">Kabel (physisch)</option>
+</select>
+</div>
+</div>
+<div class="formRow" id="connServiceRow">
 <div class="formCol">
 <label for="connService">Dienst</label>
 <select id="connService"></select>
@@ -391,6 +422,8 @@ let dirty=false;
 let editingIndex=null;
 let connectSourceIndex=null;
 let pendingConn=null;
+let physAdj=[];
+let hostEdges=[];
 function tt(v){if(v===null||v===undefined)return'';return String(v);}
 function getVlanKey(ip){
 if(typeof ip!=='string')return'Unbekannt';
@@ -542,6 +575,7 @@ function getConnectionColor(connType){
 const typ=tt(connType);
 if(appConfig&&appConfig.connectionStyles&&appConfig.connectionStyles[typ]&&appConfig.connectionStyles[typ].color)return String(appConfig.connectionStyles[typ].color);
 const low=typ.toLowerCase();
+if(low==='kabel')return'#334155';
 if(low.indexOf('vpn')!==-1||low.indexOf('ipsec')!==-1)return'#008000';
 if(low.indexOf('rdp')!==-1)return'#cc0000';
 if(low.indexOf('https')!==-1||low.indexOf('http')!==-1)return'#2563eb';
@@ -569,6 +603,59 @@ if(ttg==='hostname'&&Object.prototype.hasOwnProperty.call(deviceIndexByHostname,
 if(ttg==='ip'&&Object.prototype.hasOwnProperty.call(deviceIndexByIp,tg))return deviceIndexByIp[tg];
 if(Object.prototype.hasOwnProperty.call(deviceIndexByIp,tg))return deviceIndexByIp[tg];
 if(Object.prototype.hasOwnProperty.call(deviceIndexByHostname,tgLow))return deviceIndexByHostname[tgLow];
+return null;
+}
+const wellKnownPorts={'HTTPS':443,'HTTPS-Admin':443,'HTTP':80,'HTTP-Proxy':8080,'SSH':22,'DNS':53,'RDP':3389,'SMTP':25,'LDAP':389,'NTP':123,'SNMP':161,'SYSLOG':514,'iSCSI':3260,'NFS':2049,'MSSQL':1433,'ORACLE-DB':1521,'SMB':445,'RADIUS':1812,'CAPWAP':5246,'IPsec-VPN':500,'VPN':500,'BGP':179};
+function isCableConn(c){return tt((c||{}).connType||(c||{}).service||'').toLowerCase()==='kabel';}
+function isFirewallIdx(i){
+const d=deviceData[i]||{};
+return getTypeIconPath(d.Type||d.type||'').indexOf('firewall.svg')!==-1;
+}
+function connPortOf(c){
+const p=Number((c||{}).port||0);
+if(p>0)return p;
+const k=tt((c||{}).connType||(c||{}).service||'');
+if(Object.prototype.hasOwnProperty.call(wellKnownPorts,k))return wellKnownPorts[k];
+return 0;
+}
+function fwBlocks(fw,c){
+if(tt((fw||{}).FwPolicy||'')!=='block')return false;
+const p=connPortOf(c);
+const allow=Array.isArray((fw||{}).FwAllow)?fw.FwAllow:[];
+if(p>0&&allow.indexOf(p)!==-1)return false;
+return true;
+}
+function physPath(src,tgt){
+if(src===tgt)return null;
+const prev=new Array(deviceData.length).fill(-1);
+const seen=new Array(deviceData.length).fill(false);
+const q=[src];
+seen[src]=true;
+while(q.length){
+const u=q.shift();
+if(u===tgt)break;
+const nb=physAdj[u]||[];
+for(const v of nb){if(!seen[v]){seen[v]=true;prev[v]=u;q.push(v);}}
+}
+if(!seen[tgt])return null;
+const path=[];
+let cur=tgt;
+while(cur!==src&&cur!==-1){path.push(cur);cur=prev[cur];}
+path.push(src);
+path.reverse();
+return path;
+}
+function checkFirewall(srcIdx,tgtIdx,c){
+const path=physPath(srcIdx,tgtIdx);
+if(!path)return null;
+let firstFw=null;
+for(let k=1;k<path.length-1;k++){
+const idx=path[k];
+if(!isFirewallIdx(idx))continue;
+if(firstFw===null)firstFw=idx;
+if(fwBlocks(deviceData[idx],c))return{blocked:true,fwIndex:idx};
+}
+if(firstFw!==null)return{blocked:false,fwIndex:firstFw};
 return null;
 }
 function buildLayout(){
@@ -611,6 +698,8 @@ nodePositions[di]={x:cx,y:y,group:g};
 }
 }
 edges=[];
+physAdj=new Array(deviceData.length);
+for(let i=0;i<deviceData.length;i++)physAdj[i]=[];
 for(let i=0;i<deviceData.length;i++){
 const d=deviceData[i]||{};
 const conns=Array.isArray(d.Connections)?d.Connections:[];
@@ -621,9 +710,34 @@ const tg=tt(c.target||'');
 const ct=tt(c.connType||c.service||'Unbekannt');
 const tgtIndex=resolveTargetIndex(ttg,tg);
 if(tgtIndex!==null&&nodePositions[i]&&nodePositions[tgtIndex]){
-edges.push({src:i,tgt:tgtIndex,connIndex:ci,connType:ct});
+const cable=isCableConn(c);
+edges.push({src:i,tgt:tgtIndex,connIndex:ci,connType:ct,cable:cable,blocked:false,blockedBy:null});
+if(cable){physAdj[i].push(tgtIndex);physAdj[tgtIndex].push(i);}
 }
 }
+}
+hostEdges=[];
+for(let hIdx=0;hIdx<deviceData.length;hIdx++){
+const hd=deviceData[hIdx]||{};
+const range=tt(hd.IPRange||'');
+if(range.indexOf('/')===-1)continue;
+for(let v=0;v<deviceData.length;v++){
+if(v===hIdx)continue;
+const vd=deviceData[v]||{};
+const vip=tt(vd.IP||vd.ip||'');
+if(vip!==''&&ipInCidr(vip,range))hostEdges.push({host:hIdx,vm:v});
+}
+}
+for(const he of hostEdges){
+physAdj[he.host].push(he.vm);
+physAdj[he.vm].push(he.host);
+}
+for(const e of edges){
+if(e.cable)continue;
+const d=deviceData[e.src]||{};
+const conns=Array.isArray(d.Connections)?d.Connections:[];
+const res=checkFirewall(e.src,e.tgt,conns[e.connIndex]||{});
+if(res&&res.blocked){e.blocked=true;e.blockedBy=res.fwIndex;}
 }
 renderMap();
 }
@@ -638,6 +752,7 @@ svg.setAttribute('width',w);
 svg.setAttribute('height',h);
 const rectLayer=document.createElementNS('http://www.w3.org/2000/svg','g');
 const groupLabelLayer=document.createElementNS('http://www.w3.org/2000/svg','g');
+const hostLayer=document.createElementNS('http://www.w3.org/2000/svg','g');
 const edgesLayer=document.createElementNS('http://www.w3.org/2000/svg','g');
 const nodesLayer=document.createElementNS('http://www.w3.org/2000/svg','g');
 const defs=document.createElementNS('http://www.w3.org/2000/svg','defs');
@@ -663,6 +778,7 @@ markerIds[color]=id;
 return id;
 }
 content.appendChild(rectLayer);
+content.appendChild(hostLayer);
 content.appendChild(edgesLayer);
 content.appendChild(nodesLayer);
 content.appendChild(groupLabelLayer);
@@ -734,6 +850,23 @@ gl.setAttribute('class','nodeGroupLabel');
 gl.textContent=gKey;
 groupLabelLayer.appendChild(gl);
 }
+for(const he of hostEdges){
+if(!visibleDevice[he.host]||!visibleDevice[he.vm])continue;
+const p1=nodePositions[he.host];
+const p2=nodePositions[he.vm];
+if(!p1||!p2)continue;
+const hl=document.createElementNS('http://www.w3.org/2000/svg','line');
+hl.setAttribute('x1',String(p1.x));
+hl.setAttribute('y1',String(p1.y));
+hl.setAttribute('x2',String(p2.x));
+hl.setAttribute('y2',String(p2.y));
+hl.setAttribute('stroke','#94a3b8');
+hl.setAttribute('stroke-width','1');
+hl.setAttribute('stroke-dasharray','3 3');
+hl.setAttribute('stroke-opacity','0.7');
+hl.style.pointerEvents='none';
+hostLayer.appendChild(hl);
+}
 const edgesFromSrc={};
 for(let i=0;i<edges.length;i++){
 const e=edges[i];
@@ -795,13 +928,20 @@ hit.addEventListener('click',function(ev){ev.stopPropagation();selectConnectionB
 edgesLayer.appendChild(hit);
 const path=document.createElementNS('http://www.w3.org/2000/svg','path');
 path.setAttribute('d',dStr);
-const edgeColor=getConnectionColor(e.connType);
+let edgeColor=getConnectionColor(e.connType);
+if(e.blocked)edgeColor='#9ca3af';
 path.setAttribute('stroke',edgeColor);
-path.setAttribute('stroke-width','1.4');
-path.setAttribute('stroke-opacity','0.9');
 path.setAttribute('fill','none');
 path.style.pointerEvents='none';
+if(e.cable){
+path.setAttribute('stroke-width','2.6');
+path.setAttribute('stroke-opacity','0.95');
+}else{
+path.setAttribute('stroke-width','1.4');
+path.setAttribute('stroke-opacity',e.blocked?'0.8':'0.9');
+if(e.blocked)path.setAttribute('stroke-dasharray','5 4');
 path.setAttribute('marker-end','url(#'+markerFor(edgeColor)+')');
+}
 edgesLayer.appendChild(path);
 }
 for(let i=0;i<deviceData.length;i++){
@@ -876,8 +1016,9 @@ const hn=tt(d.Hostname||d.hostname||'');
 const ip=tt(d.IP||d.ip||'');
 const type=tt(d.Type||d.type||'');
 const kindHay=tt(d.Kind||d.kind||'');
+const rangeHay=tt(d.IPRange||'');
 const vlan=getVlanKey(ip);
-hay=(hn+' '+ip+' '+type+' '+kindHay+' '+vlan).toLowerCase();
+hay=(hn+' '+ip+' '+type+' '+kindHay+' '+rangeHay+' '+vlan).toLowerCase();
 const devNotes=tt(d.Notes||d.notes||'');
 if(devNotes)hay+=' '+devNotes.toLowerCase();
 const conns=Array.isArray(d.Connections)?d.Connections:[];
@@ -1010,6 +1151,23 @@ addRow('IP-Adresse',ip);
 addRow('Typ',tt(d.Type||d.type||''));
 const kindRow=tt(d.Kind||d.kind||'');
 if(kindRow!=='')addRow('Art',kindRow);
+const rangeRow=tt(d.IPRange||'');
+if(rangeRow!=='')addRow('IP-Bereich',rangeRow);
+for(const he of hostEdges){
+if(he.vm===deviceIndex){
+const hd=deviceData[he.host]||{};
+addRow('Host',tt(hd.Hostname||hd.hostname||hd.IP||hd.ip||'?'));
+break;
+}
+}
+if(isFirewallIdx(deviceIndex)){
+const pol=tt(d.FwPolicy||'');
+addRow('Firewall-Regel',pol==='block'?'Alles blockieren (außer Freigaben)':'Alles erlauben');
+if(pol==='block'){
+const allow=Array.isArray(d.FwAllow)?d.FwAllow:[];
+addRow('Freigaben',allow.length>0?allow.join(', '):'keine');
+}
+}
 addRow('VLAN / Netz',getVlanKey(ip));
 addRow('Gruppe',group);
 body.appendChild(info);
@@ -1224,6 +1382,22 @@ addRow('Ziel',info);
 addRow('Zieltyp',tgtType||'-');
 const portNum=Number(c.port||0);
 if(portNum>0)addRow('Port',String(portNum));
+else{
+const wk=connPortOf(c);
+if(wk>0)addRow('Port (Standard)',String(wk));
+}
+if(isCableConn(c))addRow('Art','Kabel (physisch)');
+else{
+const tgtIdxFw=resolveTargetIndex(tgtType,tgt);
+if(tgtIdxFw!==null){
+const fwRes=checkFirewall(deviceIndex,tgtIdxFw,c);
+if(fwRes){
+const fwd=deviceData[fwRes.fwIndex]||{};
+const fwName=tt(fwd.Hostname||fwd.hostname||fwd.IP||fwd.ip||'?');
+addRow('Firewall',fwRes.blocked?'blockiert durch '+fwName:'erlaubt ('+fwName+')');
+}
+}
+}
 const connNotes=tt(c.Notes||c.notes||'').trim();
 if(connNotes!==''){
 const nb=document.createElement('div');
@@ -1282,11 +1456,18 @@ const keys=[];
 const labels=appConfig.serviceLabels&&typeof appConfig.serviceLabels==='object'?appConfig.serviceLabels:{};
 for(const k in labels){
 if(!Object.prototype.hasOwnProperty.call(labels,k))continue;
-if(k==='DEFAULT')continue;
+if(k==='DEFAULT'||k==='Kabel')continue;
 keys.push(k);
 }
 keys.sort();
 return keys;
+}
+function updateFwSection(){
+const isFw=document.getElementById('devType').value==='Firewall'||getTypeIconPath(document.getElementById('devType').value).indexOf('firewall.svg')!==-1;
+document.getElementById('fwSection').style.display=isFw?'block':'none';
+}
+function updateConnKind(){
+document.getElementById('connServiceRow').style.display=document.getElementById('connKind').value==='cable'?'none':'flex';
 }
 function fillServiceSelect(){
 const sel=document.getElementById('connService');
@@ -1337,6 +1518,9 @@ document.getElementById('devHostname').value='';
 document.getElementById('devIP').value='';
 fillTypeSelect('Gerät (Sonstiges)');
 document.getElementById('devKind').value='Physisch';
+document.getElementById('devRange').value='';
+document.getElementById('devFwPolicy').value='allow';
+document.getElementById('devFwPorts').value='';
 document.getElementById('devNotes').value='';
 }else{
 const d=deviceData[index]||{};
@@ -1346,8 +1530,12 @@ document.getElementById('devIP').value=tt(d.IP||d.ip||'');
 fillTypeSelect(tt(d.Type||d.type||''));
 const kind=tt(d.Kind||d.kind||'');
 document.getElementById('devKind').value=kind==='VM'||kind==='Extern'?kind:'Physisch';
+document.getElementById('devRange').value=tt(d.IPRange||'');
+document.getElementById('devFwPolicy').value=tt(d.FwPolicy||'')==='block'?'block':'allow';
+document.getElementById('devFwPorts').value=Array.isArray(d.FwAllow)?d.FwAllow.join(', '):'';
 document.getElementById('devNotes').value=tt(d.Notes||d.notes||'');
 }
+updateFwSection();
 hideOverlay();
 document.getElementById('deviceModal').style.display='flex';
 }
@@ -1364,6 +1552,21 @@ if(hn!=='')dev.Hostname=hn;else delete dev.Hostname;
 if(ip!=='')dev.IP=ip;else delete dev.IP;
 dev.Type=document.getElementById('devType').value;
 dev.Kind=document.getElementById('devKind').value;
+const range=document.getElementById('devRange').value.trim();
+if(range!==''&&range.indexOf('/')!==-1)dev.IPRange=range;else delete dev.IPRange;
+const isFw=dev.Type==='Firewall'||getTypeIconPath(dev.Type).indexOf('firewall.svg')!==-1;
+if(isFw){
+dev.FwPolicy=document.getElementById('devFwPolicy').value==='block'?'block':'allow';
+const ports=[];
+for(const part of document.getElementById('devFwPorts').value.split(/[,;\s]+/)){
+const n=Number(part);
+if(Number.isInteger(n)&&n>0&&n<=65535&&ports.indexOf(n)===-1)ports.push(n);
+}
+dev.FwAllow=ports;
+}else{
+delete dev.FwPolicy;
+delete dev.FwAllow;
+}
 const notes=document.getElementById('devNotes').value.trim();
 if(notes!=='')dev.Notes=notes;else delete dev.Notes;
 if(!Array.isArray(dev.Connections))dev.Connections=[];
@@ -1415,6 +1618,8 @@ const sName=tt(s.Hostname||s.hostname||s.IP||s.ip||'?');
 const tName=tt(t.Hostname||t.hostname||t.IP||t.ip||'?');
 document.getElementById('connModalInfo').textContent=sName+' → '+tName;
 fillServiceSelect();
+document.getElementById('connKind').value='service';
+updateConnKind();
 document.getElementById('connPort').value='';
 document.getElementById('connNotes').value='';
 document.getElementById('connModal').style.display='flex';
@@ -1432,15 +1637,19 @@ const t=deviceData[pendingConn.tgt]||{};
 const hn=tt(t.Hostname||t.hostname||'');
 const ip=tt(t.IP||t.ip||'');
 const obj={};
+if(document.getElementById('connKind').value==='cable'){
+obj.connType='Kabel';
+}else{
 const svc=document.getElementById('connService').value;
 if(svc!=='')obj.connType=svc;
-obj.target=hn||ip;
-obj.targetType=hn!==''?'hostname':'ip';
 const portStr=document.getElementById('connPort').value.trim();
 if(portStr!==''){
 const n=Number(portStr);
 if(!Number.isNaN(n)&&n>0)obj.port=n;
 }
+}
+obj.target=hn||ip;
+obj.targetType=hn!==''?'hostname':'ip';
 const notes=document.getElementById('connNotes').value.trim();
 if(notes!=='')obj.Notes=notes;
 d.Connections.push(obj);
@@ -1476,7 +1685,8 @@ const idx=editingIndex;
 closeDeviceModal();
 deleteDevice(idx);
 });
-document.getElementById('devType').addEventListener('change',updateTypeIcon);
+document.getElementById('devType').addEventListener('change',function(){updateTypeIcon();updateFwSection();});
+document.getElementById('connKind').addEventListener('change',updateConnKind);
 document.getElementById('btnConnClose').addEventListener('click',closeConnModal);
 document.getElementById('btnConnCancel').addEventListener('click',closeConnModal);
 document.getElementById('btnConnApply').addEventListener('click',applyConnModal);
