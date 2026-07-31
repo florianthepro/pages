@@ -39,13 +39,14 @@ Nutzerdaten liegen NUR lokal unter `$liarc_datadir` (Default `liarc-data/` neben
 
 ## Ansicht / URLs
 
-- Auto-Erkennung PC/Handy per CSS-Breakpoint: ab 920px Seitenleiste
-  (Gruppen + Kategorien, Footer-Icons), darunter Topbar + Tabs/Chips.
-- Sichtbare URL bleibt sauber: app.js ersetzt die Adresse nach dem Laden
-  durch den Pfad (/, /devices, /login, ...); die aktuelle Kategorie steht im
-  Cookie `liarc_view`, "/" oeffnet also immer die letzte Ansicht.
-- Direktpfade funktionieren trotzdem: /health (Gruppe), /heart (Kategorie),
-  /login usw. werden von liarc_pretty_route() aufgeloest.
+- "/" ist die eine Hauptansicht: alle Bereiche als gruppierte Liste mit
+  aktuellem Wert bzw. Anzahl rechts; Zeile antippen oeffnet die Kategorie
+  (mobil mit Zurueck-Pfeil). Ab 920px zusaetzlich Seitenleiste.
+- Geraete & API-Schluessel sind Teil der Einstellungen (eine Seite mit
+  Abschnitten: Konto, Geraete, Sprache, Export/Import); /devices leitet um.
+- Sichtbare URL bleibt sauber: app.js ersetzt die Adresse durch den vom
+  Server vorgegebenen Pfad (data-clean): "/" fuer die Uebersicht,
+  /heart usw. fuer Kategorien - Reload funktioniert ueber liarc_pretty_route().
 
 ## Gruppen & Kategorien (fest im Code)
 

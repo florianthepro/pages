@@ -70,7 +70,7 @@ function liarc_pretty_route(): ?array {
     $map = [
         'login' => ['auth', ['v' => 'login']], 'register' => ['auth', ['v' => 'register']],
         'install' => ['auth', ['v' => 'install']], 'logout' => ['auth', ['v' => 'logout']],
-        'auth' => ['auth', []], 'devices' => ['devices', []], 'settings' => ['settings', []],
+        'auth' => ['auth', []], 'devices' => ['settings', []], 'settings' => ['settings', []],
         'data' => ['data', []], 'assets' => ['assets', []], 'api' => ['api', []],
     ];
     if (isset($map[$seg[0]])) {
@@ -297,6 +297,8 @@ function liarc_input(): array {
 }
 
 function liarc_set_page(string $p): void { $GLOBALS['liarc_page'] = $p; }
+// sichtbarer wunsch-pfad fuer die adresszeile (app.js ersetzt die URL damit)
+function liarc_set_clean(string $p): void { $GLOBALS['liarc_clean'] = $p; }
 
 // Icon aus dem inline eingebetteten Sprite (ein Request statt vieler Einzeldateien)
 function ic(string $name, string $title = ''): string {
@@ -323,12 +325,14 @@ function liarc_head(string $title, bool $bare = false, ?string $activeCat = null
     echo '<link rel="manifest" href="'.h(liarc_url('assets', ['f' => 'manifest'])).'">';
     echo '<link rel="stylesheet" href="'.h(liarc_url('assets', ['f' => 'css'])).'">';
     $base = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
-    echo '</head><body data-authed="'.($authed ? '1' : '0').'" data-csrf="'.($authed ? h(liarc_csrf_token()) : '').'" data-page="'.h((string)($GLOBALS['liarc_page'] ?? $_GET['_page'] ?? 'index')).'" data-base="'.h($base).'">';
+    $clean = isset($GLOBALS['liarc_clean']) ? $base.$GLOBALS['liarc_clean'] : '';
+    echo '</head><body data-authed="'.($authed ? '1' : '0').'" data-csrf="'.($authed ? h(liarc_csrf_token()) : '').'" data-page="'.h((string)($GLOBALS['liarc_page'] ?? $_GET['_page'] ?? 'index')).'" data-base="'.h($base).'" data-clean="'.h($clean).'">';
     echo liarc_sprite();
     if (!$bare) {
         $curPage = (string)($GLOBALS['liarc_page'] ?? 'index');
         // Desktop: Seitenleiste wie bei Desktop-Apps
         echo '<aside class="side"><a class="brand" href="'.h(liarc_url()).'">'.ic('liarc').'<span>'.h(liarc_cfg('title')).'</span></a><nav class="sidenav">';
+        echo '<a class="sc'.($curPage === 'index' && $activeCat === null ? ' active' : '').'" href="'.h(liarc_url()).'">'.ic('home').'<span>'.h(t('nav.home')).'</span></a>';
         foreach (liarc_groups() as $g => $gd) {
             echo '<div class="sg">'.h(t('g.'.$g)).'</div>';
             foreach ($gd['cats'] as $ck) {
@@ -338,14 +342,12 @@ function liarc_head(string $title, bool $bare = false, ?string $activeCat = null
             }
         }
         echo '</nav><div class="sidefoot">';
-        echo '<a href="'.h(liarc_url('devices')).'" class="'.($curPage === 'devices' ? 'active' : '').'">'.ic('devices', t('nav.devices')).'</a>';
         echo '<a href="'.h(liarc_url('settings')).'" class="'.($curPage === 'settings' ? 'active' : '').'">'.ic('gear', t('nav.settings')).'</a>';
         echo '<a href="'.h(liarc_url($curPage, ['lang' => liarc_next_lang()])).'">'.ic('globe', strtoupper(liarc_next_lang())).'</a>';
         echo '<form method="post" action="'.h(liarc_url('auth', ['v' => 'logout'])).'" class="inline"><input type="hidden" name="csrf" value="'.h(liarc_csrf_token()).'"><button type="submit" class="iconbtn">'.ic('logout', t('nav.logout')).'</button></form>';
         echo '</div></aside>';
         // Handy: Topbar
         echo '<header class="topbar"><a class="brand" href="'.h(liarc_url()).'">'.ic('liarc').'<span>'.h(liarc_cfg('title')).'</span></a><nav class="nav">';
-        echo '<a href="'.h(liarc_url('devices')).'">'.ic('devices', t('nav.devices')).'</a>';
         echo '<a href="'.h(liarc_url('settings')).'">'.ic('gear', t('nav.settings')).'</a>';
         echo '<a href="'.h(liarc_url($curPage, ['lang' => liarc_next_lang()])).'">'.ic('globe', strtoupper(liarc_next_lang())).'</a>';
         echo '<form method="post" action="'.h(liarc_url('auth', ['v' => 'logout'])).'" class="inline"><input type="hidden" name="csrf" value="'.h(liarc_csrf_token()).'"><button type="submit" class="iconbtn">'.ic('logout', t('nav.logout')).'</button></form>';

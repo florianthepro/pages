@@ -36,7 +36,7 @@
     try {
         var prettyMap = { devices: '/devices', settings: '/settings', login: '/login', register: '/register', install: '/install' };
         var base = body.dataset.base || '';
-        var clean = (base + (prettyMap[page] || '/')) || '/';
+        var clean = body.dataset.clean || (base + (prettyMap[page] || '/')) || '/';
         if (location.search || location.pathname !== clean) {
             history.replaceState(null, '', clean);
         }

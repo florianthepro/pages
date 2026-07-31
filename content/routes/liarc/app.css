@@ -330,3 +330,34 @@ pre { background: var(--bg3); padding: 10px; border-radius: 10px; overflow-x: au
 a.iconbtn { display: inline-flex; align-items: center; justify-content: center; }
 .btlabel { margin-left: 8px; }
 .iconbtn.wide.dl { justify-content: center; }
+
+.hsec { color: var(--dim); font-size: .72rem; text-transform: uppercase; letter-spacing: 1.4px; margin: 16px 4px 6px; }
+.hrow { color: var(--text); }
+.hrow:hover { background: var(--bg3); border-radius: 10px; }
+.hrow .ic:first-child { opacity: .6; }
+.hname { flex: 1; font-weight: 550; }
+.hval { font-weight: 600; }
+.hval .dim { font-weight: 400; font-size: .84rem; }
+.hrow .ic:last-child { width: 15px; height: 15px; opacity: .3; }
+
+.cathead {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 1.15rem;
+    font-weight: 650;
+    padding: 2px 0 14px;
+}
+.cathead .ic { width: 22px; height: 22px; }
+.cathead .back { padding: 6px; margin-left: -6px; }
+.cathead .back .ic { width: 20px; height: 20px; }
+
+@media (min-width: 920px) {
+    .cathead .back { display: none; }
+    .cathead { font-size: 1.25rem; padding-bottom: 18px; }
+    .pagehead { padding-bottom: 18px; }
+}
+@media (max-width: 919px) {
+    .pagehead { display: flex; align-items: center; gap: 10px; font-size: 1.15rem; font-weight: 650; padding: 2px 0 12px; }
+    .pagehead .ic { width: 22px; height: 22px; }
+}
