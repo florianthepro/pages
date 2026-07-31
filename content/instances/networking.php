@@ -1,0 +1,31 @@
+<?php
+declare(strict_types=1);
+///////////////////////
+$networking_projectpath=''; #change to "dir" if working dir is like /var/www/html/"dir"/
+$networking_title='NETWORKING';
+$networking_heading='NETWORKING by Florian';
+$networking_editortitle='Netzwerk Editor';
+$networking_jsonfile='config.json';
+$networking_jsonbakdir='/var/www/html/'.$networking_projectpath.'/tmp';
+$networking_jsondir='/var/www/html/'.$networking_projectpath.'/'.$networking_jsonfile;
+$networking_iconbase='https://raw.githubusercontent.com/florianthepro/pages/main/content/media/networking/'; #base url for typeIcons values without http
+$networking_icon='https://raw.githubusercontent.com/florianthepro/pages/main/content/media/networking/index.svg';
+$networking_editoricon='https://raw.githubusercontent.com/florianthepro/pages/main/content/media/networking/edit.svg';
+$networking_editorheading=$networking_heading.' '.$networking_editortitle;
+
+$sharedVars=get_defined_vars();
+
+$yaml=<<<'YAML'
+license: "https://raw.githubusercontent.com/florianthepro/pages/main/LICENSE"
+blocked: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/blocked.html"
+index: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/networking/index.php"
+edit: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/networking/edit.php"
+raw: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/networking/raw.php"
+YAML;
+///////////////////////
+$__loaderUrl='https://raw.githubusercontent.com/florianthepro/pages/main/content/loader/loader.php';
+$__loaderFile=sys_get_temp_dir().'/florian_pages_loader.php';
+$__loaderCode=file_get_contents($__loaderUrl);
+if($__loaderCode===false){http_response_code(500);exit('Loader konnte nicht geladen werden.');}
+if(file_put_contents($__loaderFile,$__loaderCode,LOCK_EX)===false){http_response_code(500);exit('Loader konnte nicht gespeichert werden.');}
+require $__loaderFile;
