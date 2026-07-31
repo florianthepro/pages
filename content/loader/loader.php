@@ -88,9 +88,24 @@ if($data===false)app_fail('Download fehlgeschlagen.',['url'=>$url]);
 return(string)$data;
 }
 function app_cache_dir(): string{
-$dir=rtrim(sys_get_temp_dir(),DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'gh-raw-loader';
+static $cached=null;
+if($cached!==null)return$cached;
+#pro installation eindeutig (geteiltes /tmp auf shared hosting), mit fallbacks
+$suffix=substr(sha1(dirname($_SERVER['SCRIPT_FILENAME']??__DIR__)),0,10);
+$tmp=rtrim(sys_get_temp_dir(),DIRECTORY_SEPARATOR);
+$dirs=[$tmp.DIRECTORY_SEPARATOR.'gh-raw-loader-'.$suffix,$tmp.DIRECTORY_SEPARATOR.'gh-raw-loader'];
+$script=dirname($_SERVER['SCRIPT_FILENAME']??'');
+if($script!==''&&$script!=='.')$dirs[]=$script.DIRECTORY_SEPARATOR.'loader-cache';
+foreach($dirs as $dir){
 if(!is_dir($dir))@mkdir($dir,0700,true);
-return$dir;
+if(is_dir($dir)&&is_writable($dir)){
+if(str_ends_with($dir,'loader-cache')&&!is_file($dir.DIRECTORY_SEPARATOR.'.htaccess')){
+@file_put_contents($dir.DIRECTORY_SEPARATOR.'.htaccess',"<IfModule mod_authz_core.c>\nRequire all denied\n</IfModule>\n<IfModule !mod_authz_core.c>\nDeny from all\n</IfModule>\n");
+}
+return$cached=$dir;
+}
+}
+app_fail('Kein beschreibbares Cache-Verzeichnis gefunden.',['geprueft'=>implode("\n",$dirs)]);
 }
 function app_cached_script_path(string $url): string{
 $path=(string)(parse_url($url,PHP_URL_PATH)??'');
@@ -118,6 +133,9 @@ return preg_match('/<\?(?!php|=|xml)/i',$content)===1;
 }
 function app_lint_file(string $file): array{
 if(!defined('PHP_BINARY')||PHP_BINARY==='')return['ok'=>null,'output'=>'PHP_BINARY nicht verfügbar'];
+if(!function_exists('exec'))return['ok'=>null,'output'=>'exec nicht verfügbar'];
+$disabled=array_map('trim',explode(',',(string)ini_get('disable_functions')));
+if(in_array('exec',$disabled,true))return['ok'=>null,'output'=>'exec deaktiviert'];
 exec(escapeshellarg(PHP_BINARY).' -l '.escapeshellarg($file).' 2>&1',$out,$code);
 $output=implode("\n",$out);
 if($output==='')$output='Kein Lint-Output';
