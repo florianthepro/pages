@@ -109,7 +109,74 @@ if(is_array($tmp)){$cfg=normalizeConfig($tmp);applyDevicesDerivedDefaults($cfg);
 }
 $cfg=defaultConfig();
 applyDevicesDerivedDefaults($cfg);
+$dir=dirname($path);
+if(!is_dir($dir))@mkdir($dir,0775,true);
+if(!is_file($path)){
+$json=json_encode($cfg,JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+if($json!==false)@file_put_contents($path,$json,LOCK_EX);
+}
 return $cfg;
+}
+function nw_b32_encode($bin){
+$alpha='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+$out='';$bits=0;$val=0;
+for($i=0;$i<strlen($bin);$i++){
+$val=($val<<8)|ord($bin[$i]);
+$bits+=8;
+while($bits>=5){$bits-=5;$out.=$alpha[($val>>$bits)&31];}
+}
+if($bits>0)$out.=$alpha[($val<<(5-$bits))&31];
+return $out;
+}
+function nw_b32_decode($s){
+$alpha='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+$s=strtoupper(preg_replace('/[^A-Za-z2-7]/','',(string)$s));
+$out='';$bits=0;$val=0;
+for($i=0;$i<strlen($s);$i++){
+$p=strpos($alpha,$s[$i]);
+if($p===false)continue;
+$val=($val<<5)|$p;
+$bits+=5;
+if($bits>=8){$bits-=8;$out.=chr(($val>>$bits)&255);}
+}
+return $out;
+}
+function nw_totp_code($secret,$slice){
+$key=nw_b32_decode($secret);
+$bin=pack('N',0).pack('N',$slice);
+$hash=hash_hmac('sha1',$bin,$key,true);
+$off=ord(substr($hash,-1))&0x0F;
+$v=((ord($hash[$off])&0x7F)<<24)|((ord($hash[$off+1])&0xFF)<<16)|((ord($hash[$off+2])&0xFF)<<8)|(ord($hash[$off+3])&0xFF);
+return str_pad((string)($v%1000000),6,'0',STR_PAD_LEFT);
+}
+function nw_totp_verify($secret,$code){
+$code=preg_replace('/\s+/','',(string)$code);
+if(!preg_match('/^\d{6}$/',$code))return false;
+$slice=(int)floor(time()/30);
+for($i=-1;$i<=1;$i++){
+if(hash_equals(nw_totp_code($secret,$slice+$i),$code))return true;
+}
+return false;
+}
+function nw_totp_path($jsondir){return dirname($jsondir).DIRECTORY_SEPARATOR.'totp.secret.php';}
+function nw_totp_load($path){
+if(!is_readable($path))return null;
+$lines=@file($path,FILE_IGNORE_NEW_LINES|FILE_SKIP_EMPTY_LINES);
+if(!is_array($lines))return null;
+foreach($lines as $line){
+$line=trim($line);
+if($line===''||strpos($line,'<?php')===0)continue;
+$data=json_decode($line,true);
+if(is_array($data)&&isset($data['secret']))return $data;
+}
+return null;
+}
+function nw_totp_store($path,$data){
+$dir=dirname($path);
+if(!is_dir($dir))@mkdir($dir,0775,true);
+$json=json_encode($data);
+if($json===false)return false;
+return @file_put_contents($path,"<?php exit; ?>\n".$json."\n",LOCK_EX)!==false;
 }
 function save_config($path,$cfg){
 $cfg=normalizeConfig($cfg);
@@ -132,21 +199,45 @@ return @file_put_contents($path,$json,LOCK_EX)!==false;
 session_start();
 if(empty($_SESSION['networking_csrf']))$_SESSION['networking_csrf']=bin2hex(random_bytes(16));
 $csrfToken=$_SESSION['networking_csrf'];
+$totpPath=nw_totp_path($networking_jsondir);
+$totp=nw_totp_load($totpPath);
+if($totp===null){
+$totp=['secret'=>nw_b32_encode(random_bytes(20)),'confirmed'=>false];
+nw_totp_store($totpPath,$totp);
+}
 $save_msg='';
 $save_err='';
+$pendingConfig=null;
 if($_SERVER['REQUEST_METHOD']==='POST'&&($_POST['action']??'')==='save'){
 $token=$_POST['csrf']??'';
-if(!hash_equals($csrfToken,(string)$token))$save_err='Ungültiges Sicherheits-Token.';
-else{
 $decoded=json_decode((string)($_POST['config_json']??''),true);
-if(!is_array($decoded))$save_err='Übergebene Konfiguration ist kein gültiges JSON-Objekt.';
-else{
-if(save_config($networking_jsondir,$decoded))$save_msg='Gespeichert.';
-else $save_err='Fehler beim Speichern: '.$networking_jsondir;
+if(!hash_equals($csrfToken,(string)$token))$save_err='Ungültiges Sicherheits-Token.';
+elseif(!nw_totp_verify((string)$totp['secret'],(string)($_POST['totp']??''))){
+$save_err='TOTP-Code ungültig – NICHT gespeichert. Änderungen sind noch da, Code prüfen und erneut speichern.';
+if(is_array($decoded))$pendingConfig=$decoded;
 }
+elseif(!is_array($decoded))$save_err='Übergebene Konfiguration ist kein gültiges JSON-Objekt.';
+else{
+if(save_config($networking_jsondir,$decoded)){
+$save_msg='Gespeichert.';
+if(empty($totp['confirmed'])){$totp['confirmed']=true;nw_totp_store($totpPath,$totp);}
+}else{$save_err='Fehler beim Speichern: '.$networking_jsondir;if(is_array($decoded))$pendingConfig=$decoded;}
 }
 }
 $config=load_config($networking_jsondir);
+$clientDirty=false;
+if($pendingConfig!==null){
+$config=normalizeConfig($pendingConfig);
+applyDevicesDerivedDefaults($config);
+$clientDirty=true;
+}
+$totpConfirmed=!empty($totp['confirmed']);
+$totpSetup=null;
+if(!$totpConfirmed){
+$host=(string)($_SERVER['HTTP_HOST']??'server');
+$label=rawurlencode($networking_title.':'.$host);
+$totpSetup=['secret'=>(string)$totp['secret'],'uri'=>'otpauth://totp/'.$label.'?secret='.rawurlencode((string)$totp['secret']).'&issuer='.rawurlencode($networking_title)];
+}
 $configError=null;
 if(!is_readable($networking_jsondir))$configError='Keine config.json gefunden – Standard geladen. Mit „+ Gerät" starten und speichern.';
 header('Content-Type: text/html; charset=utf-8');
@@ -196,6 +287,28 @@ textarea{min-height:64px;resize:vertical}
 #devTypeIcon{width:30px;height:30px;border-radius:6px;border:1px solid #e5e7eb;background:#f9fafb;flex:0 0 auto}
 #connModalInfo{font-size:13px;color:#374151;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:8px 10px;margin-bottom:10px}
 #overlayActions{display:flex;gap:6px;margin:6px 0}
+#totpInput{width:76px;box-sizing:border-box;border-radius:6px;border:1px solid #c6cbd3;font-size:13px;padding:7px 8px;text-align:center;letter-spacing:2px}
+#totpInput:focus{border-color:#0070ff;outline:none;box-shadow:0 0 0 2px rgba(0,112,255,.15)}
+#layerBar{flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:5px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;font-size:12px;flex-wrap:wrap}
+#layerBarTitle{color:#6b7280;font-weight:bold}
+.layerToggle{display:inline-flex;align-items:center;gap:4px;color:#374151;cursor:pointer;user-select:none}
+.layerToggle input{accent-color:#0070ff}
+.layerPhys{color:#334155;font-weight:bold}
+#ctxMenu{position:fixed;z-index:3000;background:#fff;border:1px solid #d1d5db;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.18);min-width:190px;padding:4px;display:none}
+.ctxItem{padding:7px 10px;font-size:13px;border-radius:5px;cursor:pointer;color:#111827}
+.ctxItem:hover{background:#eef1f5}
+.ctxItem.danger{color:#dc2626}
+.ctxItem.danger:hover{background:#fee2e2}
+.ctxSep{height:1px;background:#e5e7eb;margin:4px 6px}
+.ctxTitle{padding:5px 10px;font-size:11px;font-weight:bold;color:#6b7280;text-transform:uppercase;letter-spacing:.05em}
+#totpQrWrap{display:flex;justify-content:center;margin:10px 0;background:#fff;padding:8px}
+#totpQr{image-rendering:pixelated}
+.totpSecret{text-align:center;font-family:monospace;font-size:15px;font-weight:bold;letter-spacing:2px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:8px;margin:8px 0;word-break:break-all}
+.totpStep{font-size:13px;color:#374151;margin:6px 0}
+.totpUri{font-size:11px;color:#6b7280;word-break:break-all;margin-top:8px}
+.totpUri a{color:#0070ff}
+.jsonHint{font-size:12px;color:#6b7280;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:7px 9px}
+.cableLabel{font-size:8.5px;fill:#334155;font-weight:bold;paint-order:stroke;stroke:#f6f8fb;stroke-width:3px;stroke-linejoin:round}
 #topBarTitle{font-size:15px;font-weight:bold;white-space:nowrap}
 #searchWrapper{position:relative;flex:1;max-width:520px}
 #searchInput{width:100%;box-sizing:border-box;border-radius:999px;border:1px solid #c6cbd3;background:#f9fafb;color:#111827;font-size:13px;padding:6px 28px 6px 28px;outline:none}
@@ -255,11 +368,21 @@ textarea{min-height:64px;resize:vertical}
 </div>
 <div id="searchMeta"><span id="searchCountDevices">0</span> Geräte · <span id="searchCountConns">0</span> Verbindungen</div>
 <button type="button" class="btnGhost" id="btnAddDevice">+ Gerät</button>
+<input type="text" id="totpInput" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="TOTP" title="6-stelliger Code aus der Authenticator-App">
 <button type="button" class="btnPrimary" id="btnSave">Speichern</button>
 <div id="topLinks">
+<?php if(!$totpConfirmed):?><a href="#" id="mfaLink">MFA einrichten</a><?php endif;?>
 <a href="?_page=raw" target="_blank" rel="noopener noreferrer">config.json</a>
 <a href="?_page=license" target="_blank" rel="noopener noreferrer">LICENSE</a>
 </div>
+</div>
+<div id="layerBar">
+<span id="layerBarTitle">Ebenen:</span>
+<label class="layerToggle"><input type="checkbox" id="lyVlan" checked> VLAN-Boxen</label>
+<label class="layerToggle layerPhys"><input type="checkbox" id="lyCable" checked> Physisch (Kabel)</label>
+<label class="layerToggle"><input type="checkbox" id="lySvc" checked> Dienste</label>
+<label class="layerToggle"><input type="checkbox" id="lyBlocked" checked> Blockierte</label>
+<label class="layerToggle"><input type="checkbox" id="lyHost" checked> Host/VM</label>
 </div>
 <div id="main">
 <div id="mapArea">
@@ -276,8 +399,31 @@ textarea{min-height:64px;resize:vertical}
 <form id="saveForm" method="post" autocomplete="off">
 <input type="hidden" name="action" value="save">
 <input type="hidden" name="csrf" value="<?php echo h($csrfToken);?>">
+<input type="hidden" name="totp" id="totpHidden">
 <input type="hidden" name="config_json" id="config_json">
 </form>
+<div id="ctxMenu"></div>
+<?php if($totpSetup!==null):?>
+<div class="modalBackdrop" id="totpModal">
+<div class="modalPanel">
+<div class="modalHeader">
+<div class="modalTitle">MFA einrichten (TOTP)</div>
+<button type="button" class="btnGhost" id="btnTotpClose">Schließen</button>
+</div>
+<div class="modalBody">
+<div class="totpStep">1. QR-Code mit einer Authenticator-App scannen (oder Secret manuell eintragen):</div>
+<div id="totpQrWrap"><canvas id="totpQr"></canvas></div>
+<div class="totpSecret"><?php echo h($totpSetup['secret']);?></div>
+<div class="totpStep">2. Beim ersten Speichern den 6-stelligen Code ins TOTP-Feld eingeben – damit ist die Einrichtung bestätigt. Danach braucht jedes Speichern einen frischen Code.</div>
+<div class="totpUri"><a href="<?php echo h($totpSetup['uri']);?>"><?php echo h($totpSetup['uri']);?></a></div>
+</div>
+<div class="modalFooter">
+<span></span>
+<button type="button" class="btnPrimary" id="btnTotpOk">Verstanden</button>
+</div>
+</div>
+</div>
+<?php endif;?>
 <div class="modalBackdrop" id="deviceModal">
 <div class="modalPanel">
 <div class="modalHeader">
@@ -333,12 +479,7 @@ textarea{min-height:64px;resize:vertical}
 </div>
 </div>
 </div>
-<div class="formRow">
-<div class="formCol">
-<label for="devNotes">Notizen</label>
-<textarea id="devNotes"></textarea>
-</div>
-</div>
+<div class="jsonHint">Notizen werden direkt in der config.json gepflegt und hier nur angezeigt.</div>
 </div>
 <div class="modalFooter">
 <button type="button" class="btnDanger" id="btnDeviceDelete">Gerät löschen</button>
@@ -373,10 +514,10 @@ textarea{min-height:64px;resize:vertical}
 <input type="number" id="connPort" min="1" max="65535" placeholder="443">
 </div>
 </div>
-<div class="formRow">
+<div class="formRow" id="connVlanRow" style="display:none">
 <div class="formCol">
-<label for="connNotes">Notizen (optional)</label>
-<input type="text" id="connNotes">
+<label for="connVlans">Port-VLANs (optional, z.B. 10,20 – kommt vom Switchport)</label>
+<input type="text" id="connVlans" placeholder="z.B. 10,20">
 </div>
 </div>
 </div>
@@ -400,6 +541,8 @@ textarea{min-height:64px;resize:vertical}
 <script>
 const appConfig=<?php echo json_encode($config,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);?>;
 const iconBase=<?php echo json_encode($networking_iconbase,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);?>;
+const initialDirty=<?php echo $clientDirty?'true':'false';?>;
+const totpSetup=<?php echo $totpSetup!==null?json_encode($totpSetup,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE):'null';?>;
 const deviceData=Array.isArray(appConfig.devices)?appConfig.devices:[];
 appConfig.devices=deviceData;
 </script>
@@ -424,6 +567,8 @@ let connectSourceIndex=null;
 let pendingConn=null;
 let physAdj=[];
 let hostEdges=[];
+let groupBoxes=[];
+const layers={vlan:true,cable:true,svc:true,blocked:true,host:true};
 function tt(v){if(v===null||v===undefined)return'';return String(v);}
 function getVlanKey(ip){
 if(typeof ip!=='string')return'Unbekannt';
@@ -671,31 +816,44 @@ groupKeys.sort((a,b)=>{if(a==='Unbekannt')return 1;if(b==='Unbekannt')return-1;r
 const svg=document.getElementById('mapSvg');
 const parent=svg.parentElement;
 const w=svg.clientWidth||parent.clientWidth||1200;
-const h=svg.clientHeight||parent.clientHeight||700;
-const colCount=Math.max(groupKeys.length,1);
-const colWidth=w/colCount;
-const topMargin=100;
-const bottomMargin=60;
-const availableHeight=Math.max(h-topMargin-bottomMargin,120);
-const minSpacing=40;
-const nodeRadius=16;
+const cellW=112;
+const cellH=88;
+const boxPad=16;
+const headerH=24;
+const boxGap=46;
 nodePositions=new Array(deviceData.length);
+groupBoxes=[];
+let cursorX=boxGap;
+let cursorY=64;
+let rowMaxH=0;
 for(let gi=0;gi<groupKeys.length;gi++){
 const g=groupKeys[gi];
 const indices=groups[g];
-const cx=colWidth*gi+colWidth/2;
 const count=indices.length;
-const spacing=Math.max(availableHeight/Math.max(count,1),minSpacing);
-let startY=topMargin+nodeRadius;
-if(count>1){
-const span=spacing*(count-1);
-startY=topMargin+(availableHeight-span)/2;
+const cols=Math.max(Math.ceil(Math.sqrt(count)),1);
+const rows=Math.max(Math.ceil(count/cols),1);
+let bw=cols*cellW+boxPad*2;
+const labelWidth=g.length*6.8+22;
+if(bw<labelWidth)bw=labelWidth;
+if(bw<110)bw=110;
+const bh=rows*cellH+boxPad+headerH+8;
+if(cursorX+bw>w-boxGap&&cursorX>boxGap){
+cursorX=boxGap;
+cursorY+=rowMaxH+boxGap;
+rowMaxH=0;
 }
+const box={key:g,x:cursorX,y:cursorY,w:bw,h:bh};
+groupBoxes.push(box);
 for(let k=0;k<indices.length;k++){
 const di=indices[k];
-const y=startY+k*spacing;
-nodePositions[di]={x:cx,y:y,group:g};
+const col=k%cols;
+const row=Math.floor(k/cols);
+const x=box.x+boxPad+cellW*col+cellW/2;
+const y=box.y+headerH+boxPad/2+cellH*row+cellH/2-14;
+nodePositions[di]={x:x,y:y,group:g};
 }
+cursorX+=bw+boxGap;
+if(bh>rowMaxH)rowMaxH=bh;
 }
 edges=[];
 physAdj=new Array(deviceData.length);
@@ -782,33 +940,15 @@ content.appendChild(hostLayer);
 content.appendChild(edgesLayer);
 content.appendChild(nodesLayer);
 content.appendChild(groupLabelLayer);
-const groupBBox={};
+if(layers.vlan){
+for(const box of groupBoxes){
+let anyVisible=false;
 for(let i=0;i<nodePositions.length;i++){
-const pos=nodePositions[i];
-if(!pos)continue;
-if(!visibleDevice[i])continue;
-const gKey=pos.group||'';
-if(!groupBBox[gKey])groupBBox[gKey]={minX:pos.x,maxX:pos.x,minY:pos.y,maxY:pos.y};
-else{
-if(pos.x<groupBBox[gKey].minX)groupBBox[gKey].minX=pos.x;
-if(pos.x>groupBBox[gKey].maxX)groupBBox[gKey].maxX=pos.x;
-if(pos.y<groupBBox[gKey].minY)groupBBox[gKey].minY=pos.y;
-if(pos.y>groupBBox[gKey].maxY)groupBBox[gKey].maxY=pos.y;
+if(!nodePositions[i]||!visibleDevice[i])continue;
+if(nodePositions[i].group===box.key){anyVisible=true;break;}
 }
-}
-for(const gKey in groupBBox){
-if(!Object.prototype.hasOwnProperty.call(groupBBox,gKey))continue;
-const b=groupBBox[gKey];
-const marginX=40;
-const marginY=40;
-let width=(b.maxX-b.minX)+2*marginX;
-let height=(b.maxY-b.minY)+2*marginY;
-if(width<80)width=80;
-if(height<90)height=90;
-const labelWidth=gKey.length*6.8+20;
-if(width<labelWidth)width=labelWidth;
-let x=(b.minX+b.maxX)/2-width/2;
-let y=b.minY-marginY;
+if(!anyVisible)continue;
+const gKey=box.key;
 let gFill='#ffffff';
 let gStroke='#cbd5e1';
 if(appConfig&&appConfig.groupStyles&&appConfig.groupStyles[gKey]){
@@ -817,10 +957,10 @@ if(st.fill)gFill=String(st.fill);
 if(st.stroke)gStroke=String(st.stroke);
 }
 const rect=document.createElementNS('http://www.w3.org/2000/svg','rect');
-rect.setAttribute('x',String(x));
-rect.setAttribute('y',String(y));
-rect.setAttribute('width',String(width));
-rect.setAttribute('height',String(height));
+rect.setAttribute('x',String(box.x));
+rect.setAttribute('y',String(box.y));
+rect.setAttribute('width',String(box.w));
+rect.setAttribute('height',String(box.h));
 rect.setAttribute('rx','10');
 rect.setAttribute('class','groupRect');
 rect.setAttribute('fill',gFill);
@@ -828,29 +968,30 @@ rect.setAttribute('fill-opacity','0.75');
 rect.setAttribute('stroke',gStroke);
 rectLayer.appendChild(rect);
 const band=document.createElementNS('http://www.w3.org/2000/svg','rect');
-band.setAttribute('x',String(x));
-band.setAttribute('y',String(y));
-band.setAttribute('width',String(width));
+band.setAttribute('x',String(box.x));
+band.setAttribute('y',String(box.y));
+band.setAttribute('width',String(box.w));
 band.setAttribute('height','22');
 band.setAttribute('rx','10');
 band.setAttribute('fill',gStroke==='#d1d5db'?'#94a3b8':gStroke);
 rectLayer.appendChild(band);
 const bandFix=document.createElementNS('http://www.w3.org/2000/svg','rect');
-bandFix.setAttribute('x',String(x));
-bandFix.setAttribute('y',String(y+12));
-bandFix.setAttribute('width',String(width));
+bandFix.setAttribute('x',String(box.x));
+bandFix.setAttribute('y',String(box.y+12));
+bandFix.setAttribute('width',String(box.w));
 bandFix.setAttribute('height','10');
 bandFix.setAttribute('fill',gStroke==='#d1d5db'?'#94a3b8':gStroke);
 rectLayer.appendChild(bandFix);
 const gl=document.createElementNS('http://www.w3.org/2000/svg','text');
-gl.setAttribute('x',String(x+9));
-gl.setAttribute('y',String(y+15));
+gl.setAttribute('x',String(box.x+9));
+gl.setAttribute('y',String(box.y+15));
 gl.setAttribute('text-anchor','start');
 gl.setAttribute('class','nodeGroupLabel');
 gl.textContent=gKey;
 groupLabelLayer.appendChild(gl);
 }
-for(const he of hostEdges){
+}
+if(layers.host)for(const he of hostEdges){
 if(!visibleDevice[he.host]||!visibleDevice[he.vm])continue;
 const p1=nodePositions[he.host];
 const p2=nodePositions[he.vm];
@@ -867,22 +1008,34 @@ hl.setAttribute('stroke-opacity','0.7');
 hl.style.pointerEvents='none';
 hostLayer.appendChild(hl);
 }
-const edgesFromSrc={};
+function segRectHit(x1,y1,x2,y2,box,pad){
+for(let t=0.06;t<0.95;t+=0.05){
+const px=x1+(x2-x1)*t;
+const py=y1+(y2-y1)*t;
+if(px>box.x-pad&&px<box.x+box.w+pad&&py>box.y-pad&&py<box.y+box.h+pad)return true;
+}
+return false;
+}
+const pairMap={};
 for(let i=0;i<edges.length;i++){
 const e=edges[i];
-const s=e.src;
-if(!edgesFromSrc[s])edgesFromSrc[s]=[];
-edgesFromSrc[s].push(i);
+const key=Math.min(e.src,e.tgt)+'_'+Math.max(e.src,e.tgt);
+if(!pairMap[key])pairMap[key]=[];
+pairMap[key].push(i);
 }
 for(let ei=0;ei<edges.length;ei++){
 const e=edges[ei];
+if(e.cable&&!layers.cable)continue;
+if(!e.cable&&!layers.svc)continue;
+if(e.blocked&&!layers.blocked)continue;
 const s=e.src;
 const tIdx=e.tgt;
 if(!visibleDevice[s]||!visibleDevice[tIdx])continue;
 const p1=nodePositions[s];
 const p2=nodePositions[tIdx];
 if(!p1||!p2)continue;
-const group=edgesFromSrc[s]||[ei];
+const pairKey=Math.min(s,tIdx)+'_'+Math.max(s,tIdx);
+const group=pairMap[pairKey]||[ei];
 const count=group.length;
 let x1=p1.x;
 let y1=p1.y;
@@ -898,10 +1051,23 @@ let offset=0;
 if(count>1){
 const idx=group.indexOf(ei);
 if(idx!==-1){
-const step=28;
+const step=26;
 offset=(idx-(count-1)/2)*step;
+if(s>tIdx)offset=-offset;
 }
 }
+let avoid=0;
+for(const box of groupBoxes){
+if(box.key===p1.group||box.key===p2.group)continue;
+if(!segRectHit(x1,y1,x2,y2,box,6))continue;
+const bcx=box.x+box.w/2;
+const bcy=box.y+box.h/2;
+const side=dx*(bcy-y1)-dy*(bcx-x1);
+const need=Math.min(box.w,box.h)/2+48;
+const a=side>0?-need:need;
+if(Math.abs(a)>Math.abs(avoid))avoid=a;
+}
+offset+=avoid;
 const mx=(x1+x2)/2;
 const my=(y1+y2)/2;
 const cx=mx+nx*offset;
@@ -925,6 +1091,7 @@ hit.setAttribute('stroke-opacity','0');
 hit.dataset.edgeIndex=String(ei);
 hit.style.cursor='pointer';
 hit.addEventListener('click',function(ev){ev.stopPropagation();selectConnectionByEdge(ei);});
+hit.addEventListener('contextmenu',function(ev){ev.preventDefault();ev.stopPropagation();showEdgeMenu(ev,ei);});
 edgesLayer.appendChild(hit);
 const path=document.createElementNS('http://www.w3.org/2000/svg','path');
 path.setAttribute('d',dStr);
@@ -943,6 +1110,22 @@ if(e.blocked)path.setAttribute('stroke-dasharray','5 4');
 path.setAttribute('marker-end','url(#'+markerFor(edgeColor)+')');
 }
 edgesLayer.appendChild(path);
+if(e.cable){
+const srcDev=deviceData[s]||{};
+const srcConns=Array.isArray(srcDev.Connections)?srcDev.Connections:[];
+const vl=tt((srcConns[e.connIndex]||{}).vlans||'');
+if(vl!==''){
+const lx=0.25*x1+0.5*cx+0.25*x2;
+const ly=0.25*y1+0.5*cy+0.25*y2;
+const vt=document.createElementNS('http://www.w3.org/2000/svg','text');
+vt.setAttribute('x',String(lx));
+vt.setAttribute('y',String(ly-4));
+vt.setAttribute('text-anchor','middle');
+vt.setAttribute('class','cableLabel');
+vt.textContent='VLAN '+vl;
+edgesLayer.appendChild(vt);
+}
+}
 }
 for(let i=0;i<deviceData.length;i++){
 if(!visibleDevice[i])continue;
@@ -991,6 +1174,7 @@ labelIp.setAttribute('class','nodeLabelIp');
 labelIp.textContent=ip;
 g.appendChild(labelIp);
 g.addEventListener('click',function(ev){ev.stopPropagation();handleNodeClick(i);});
+g.addEventListener('contextmenu',function(ev){ev.preventDefault();ev.stopPropagation();showNodeMenu(ev,i);});
 nodesLayer.appendChild(g);
 }
 updateMapTransform();
@@ -1127,7 +1311,8 @@ b.addEventListener('click',fn);
 actions.appendChild(b);
 }
 mkActBtn('Bearbeiten','btnGhost',function(){openDeviceModal(deviceIndex);});
-mkActBtn('Verbinden','btnGhost',function(){startConnectMode(deviceIndex);});
+mkActBtn('Dienst','btnGhost',function(){startConnectMode(deviceIndex,'service');});
+mkActBtn('Kabel','btnGhost',function(){startConnectMode(deviceIndex,'cable');});
 mkActBtn('Löschen','btnDanger',function(){deleteDevice(deviceIndex);});
 body.appendChild(actions);
 const stInfo=document.createElement('div');
@@ -1386,7 +1571,11 @@ else{
 const wk=connPortOf(c);
 if(wk>0)addRow('Port (Standard)',String(wk));
 }
-if(isCableConn(c))addRow('Art','Kabel (physisch)');
+if(isCableConn(c)){
+addRow('Art','Kabel (physisch)');
+const vls=tt(c.vlans||'');
+if(vls!=='')addRow('Port-VLANs',vls);
+}
 else{
 const tgtIdxFw=resolveTargetIndex(tgtType,tgt);
 if(tgtIdxFw!==null){
@@ -1467,7 +1656,9 @@ const isFw=document.getElementById('devType').value==='Firewall'||getTypeIconPat
 document.getElementById('fwSection').style.display=isFw?'block':'none';
 }
 function updateConnKind(){
-document.getElementById('connServiceRow').style.display=document.getElementById('connKind').value==='cable'?'none':'flex';
+const cable=document.getElementById('connKind').value==='cable';
+document.getElementById('connServiceRow').style.display=cable?'none':'flex';
+document.getElementById('connVlanRow').style.display=cable?'flex':'none';
 }
 function fillServiceSelect(){
 const sel=document.getElementById('connService');
@@ -1521,7 +1712,6 @@ document.getElementById('devKind').value='Physisch';
 document.getElementById('devRange').value='';
 document.getElementById('devFwPolicy').value='allow';
 document.getElementById('devFwPorts').value='';
-document.getElementById('devNotes').value='';
 }else{
 const d=deviceData[index]||{};
 title.textContent='Gerät bearbeiten';
@@ -1533,7 +1723,6 @@ document.getElementById('devKind').value=kind==='VM'||kind==='Extern'?kind:'Phys
 document.getElementById('devRange').value=tt(d.IPRange||'');
 document.getElementById('devFwPolicy').value=tt(d.FwPolicy||'')==='block'?'block':'allow';
 document.getElementById('devFwPorts').value=Array.isArray(d.FwAllow)?d.FwAllow.join(', '):'';
-document.getElementById('devNotes').value=tt(d.Notes||d.notes||'');
 }
 updateFwSection();
 hideOverlay();
@@ -1567,8 +1756,6 @@ dev.FwAllow=ports;
 delete dev.FwPolicy;
 delete dev.FwAllow;
 }
-const notes=document.getElementById('devNotes').value.trim();
-if(notes!=='')dev.Notes=notes;else delete dev.Notes;
 if(!Array.isArray(dev.Connections))dev.Connections=[];
 if(editingIndex===null)deviceData.push(dev);
 closeDeviceModal();
@@ -1593,8 +1780,10 @@ hideOverlay();
 markDirty();
 rebuildAll();
 }
-function startConnectMode(srcIndex){
+let connectKindPreset='service';
+function startConnectMode(srcIndex,kind){
 connectSourceIndex=srcIndex;
+connectKindPreset=kind==='cable'?'cable':'service';
 hideOverlay();
 document.getElementById('connectBanner').style.display='flex';
 }
@@ -1618,10 +1807,10 @@ const sName=tt(s.Hostname||s.hostname||s.IP||s.ip||'?');
 const tName=tt(t.Hostname||t.hostname||t.IP||t.ip||'?');
 document.getElementById('connModalInfo').textContent=sName+' → '+tName;
 fillServiceSelect();
-document.getElementById('connKind').value='service';
+document.getElementById('connKind').value=connectKindPreset;
 updateConnKind();
 document.getElementById('connPort').value='';
-document.getElementById('connNotes').value='';
+document.getElementById('connVlans').value='';
 document.getElementById('connModal').style.display='flex';
 }
 function closeConnModal(){
@@ -1639,6 +1828,8 @@ const ip=tt(t.IP||t.ip||'');
 const obj={};
 if(document.getElementById('connKind').value==='cable'){
 obj.connType='Kabel';
+const vl=document.getElementById('connVlans').value.trim();
+if(vl!=='')obj.vlans=vl;
 }else{
 const svc=document.getElementById('connService').value;
 if(svc!=='')obj.connType=svc;
@@ -1650,8 +1841,6 @@ if(!Number.isNaN(n)&&n>0)obj.port=n;
 }
 obj.target=hn||ip;
 obj.targetType=hn!==''?'hostname':'ip';
-const notes=document.getElementById('connNotes').value.trim();
-if(notes!=='')obj.Notes=notes;
 d.Connections.push(obj);
 const srcIdx=pendingConn.src;
 closeConnModal();
@@ -1670,9 +1859,245 @@ rebuildAll();
 selectDevice(devIndex);
 }
 function saveConfigNow(){
+const code=(document.getElementById('totpInput').value||'').replace(/\s+/g,'');
+if(!/^\d{6}$/.test(code)){
+alert('Zum Speichern den 6-stelligen TOTP-Code aus der Authenticator-App ins Feld neben „Speichern" eingeben.');
+document.getElementById('totpInput').focus();
+return;
+}
+document.getElementById('totpHidden').value=code;
 document.getElementById('config_json').value=JSON.stringify(appConfig);
 dirty=false;
 document.getElementById('saveForm').submit();
+}
+function hideCtxMenu(){
+document.getElementById('ctxMenu').style.display='none';
+}
+function showCtxMenu(ev,items){
+const menu=document.getElementById('ctxMenu');
+menu.innerHTML='';
+for(const it of items){
+if(it.sep){
+const s=document.createElement('div');
+s.className='ctxSep';
+menu.appendChild(s);
+continue;
+}
+if(it.title){
+const t=document.createElement('div');
+t.className='ctxTitle';
+t.textContent=it.title;
+menu.appendChild(t);
+continue;
+}
+const el=document.createElement('div');
+el.className='ctxItem'+(it.danger?' danger':'');
+el.textContent=it.label;
+el.addEventListener('click',function(){hideCtxMenu();it.fn();});
+menu.appendChild(el);
+}
+menu.style.display='block';
+const mw=menu.offsetWidth;
+const mh=menu.offsetHeight;
+let x=ev.clientX;
+let y=ev.clientY;
+if(x+mw>window.innerWidth-8)x=window.innerWidth-mw-8;
+if(y+mh>window.innerHeight-8)y=window.innerHeight-mh-8;
+menu.style.left=x+'px';
+menu.style.top=y+'px';
+}
+function showNodeMenu(ev,i){
+const d=deviceData[i]||{};
+const name=tt(d.Hostname||d.hostname||d.IP||d.ip||'Gerät');
+showCtxMenu(ev,[
+{title:name},
+{label:'Details anzeigen',fn:function(){selectDevice(i);}},
+{label:'Bearbeiten…',fn:function(){openDeviceModal(i);}},
+{sep:true},
+{label:'Dienst verbinden…',fn:function(){startConnectMode(i,'service');}},
+{label:'Kabel verbinden…',fn:function(){startConnectMode(i,'cable');}},
+{sep:true},
+{label:'Gerät löschen',danger:true,fn:function(){deleteDevice(i);}}
+]);
+}
+function showEdgeMenu(ev,edgeIndex){
+const e=edges[edgeIndex];
+if(!e)return;
+showCtxMenu(ev,[
+{title:resolveServiceLabel(e.connType)},
+{label:'Details anzeigen',fn:function(){selectConnectionByEdge(edgeIndex);}},
+{sep:true},
+{label:'Verbindung löschen',danger:true,fn:function(){deleteConnection(e.src,e.connIndex);}}
+]);
+}
+function showCanvasMenu(ev){
+showCtxMenu(ev,[
+{label:'+ Neues Gerät…',fn:function(){openDeviceModal(null);}},
+{sep:true},
+{label:'Ansicht zurücksetzen',fn:function(){mapScale=1;mapOffsetX=0;mapOffsetY=0;updateMapTransform();}},
+{label:'Speichern',fn:function(){saveConfigNow();}}
+]);
+}
+function qrMatrix(text){
+const GEXP=new Array(256);
+const GLOG=new Array(256);
+let v=1;
+for(let i=0;i<255;i++){GEXP[i]=v;GLOG[v]=i;v=v<<1;if(v&0x100)v^=0x11d;}
+GEXP[255]=GEXP[0];
+function gmul(a,b){if(a===0||b===0)return 0;return GEXP[(GLOG[a]+GLOG[b])%255];}
+const bytes=[];
+for(let i=0;i<text.length;i++){
+const c=text.charCodeAt(i);
+if(c<128)bytes.push(c);
+else if(c<2048){bytes.push(192|(c>>6));bytes.push(128|(c&63));}
+else{bytes.push(224|(c>>12));bytes.push(128|((c>>6)&63));bytes.push(128|(c&63));}
+}
+const versions=[
+{v:1,size:21,total:26,ec:7,blocks:1,align:0},
+{v:2,size:25,total:44,ec:10,blocks:1,align:18},
+{v:3,size:29,total:70,ec:15,blocks:1,align:22},
+{v:4,size:33,total:100,ec:20,blocks:1,align:26},
+{v:5,size:37,total:134,ec:26,blocks:1,align:30},
+{v:6,size:41,total:172,ec:36,blocks:2,align:34}
+];
+let spec=null;
+for(const sp of versions){
+const dataCw=sp.total-sp.ec;
+if(bytes.length+2<=dataCw){spec={size:sp.size,ec:sp.ec,blocks:sp.blocks,align:sp.align,dataCw:dataCw};break;}
+}
+if(!spec)return null;
+const bits=[];
+function put(val,len){for(let i=len-1;i>=0;i--)bits.push((val>>i)&1);}
+put(4,4);
+put(bytes.length,8);
+for(const b of bytes)put(b,8);
+const capBits=spec.dataCw*8;
+for(let i=0;i<4&&bits.length<capBits;i++)bits.push(0);
+while(bits.length%8!==0)bits.push(0);
+const dataBytes=[];
+for(let i=0;i<bits.length;i+=8){
+let bb=0;
+for(let j=0;j<8;j++)bb=(bb<<1)|bits[i+j];
+dataBytes.push(bb);
+}
+const pads=[0xEC,0x11];
+let pi=0;
+while(dataBytes.length<spec.dataCw){dataBytes.push(pads[pi%2]);pi++;}
+function rsEncode(data,ecLen){
+let gen=[1];
+for(let i=0;i<ecLen;i++){
+const next=new Array(gen.length+1).fill(0);
+for(let j=0;j<gen.length;j++){
+next[j]^=gmul(gen[j],GEXP[i]);
+next[j+1]^=gen[j];
+}
+gen=next;
+}
+gen.reverse();
+const res=data.concat(new Array(ecLen).fill(0));
+for(let i=0;i<data.length;i++){
+const f=res[i];
+if(f===0)continue;
+for(let j=0;j<gen.length;j++)res[i+j]^=gmul(gen[j],f);
+}
+return res.slice(data.length);
+}
+const nBlocks=spec.blocks;
+const perBlock=spec.dataCw/nBlocks;
+const ecPerBlock=spec.ec/nBlocks;
+const dataBlocks=[];
+const ecBlocks=[];
+for(let b=0;b<nBlocks;b++){
+const chunk=dataBytes.slice(b*perBlock,(b+1)*perBlock);
+dataBlocks.push(chunk);
+ecBlocks.push(rsEncode(chunk,ecPerBlock));
+}
+const finalBytes=[];
+for(let i=0;i<perBlock;i++)for(let b=0;b<nBlocks;b++)finalBytes.push(dataBlocks[b][i]);
+for(let i=0;i<ecPerBlock;i++)for(let b=0;b<nBlocks;b++)finalBytes.push(ecBlocks[b][i]);
+const size=spec.size;
+const m=[];
+const used=[];
+for(let r=0;r<size;r++){m.push(new Array(size).fill(false));used.push(new Array(size).fill(false));}
+function set(r,c,val){m[r][c]=val;used[r][c]=true;}
+function finder(r,c){
+for(let i=-1;i<=7;i++)for(let j=-1;j<=7;j++){
+const rr=r+i,cc=c+j;
+if(rr<0||rr>=size||cc<0||cc>=size)continue;
+const on=(i>=0&&i<=6&&(j===0||j===6))||(j>=0&&j<=6&&(i===0||i===6))||(i>=2&&i<=4&&j>=2&&j<=4);
+set(rr,cc,on);
+}
+}
+finder(0,0);
+finder(0,size-7);
+finder(size-7,0);
+if(spec.align>0){
+const ac=spec.align;
+for(let i=-2;i<=2;i++)for(let j=-2;j<=2;j++){
+const on=Math.max(Math.abs(i),Math.abs(j))!==1;
+set(ac+i,ac+j,on);
+}
+}
+for(let i=8;i<size-8;i++){
+if(!used[6][i])set(6,i,i%2===0);
+if(!used[i][6])set(i,6,i%2===0);
+}
+set(size-8,8,true);
+const fmtBits=[1,1,1,0,1,1,1,1,1,0,0,0,1,0,0];
+for(let i=0;i<6;i++)set(8,i,fmtBits[i]===1);
+set(8,7,fmtBits[6]===1);
+set(8,8,fmtBits[7]===1);
+set(7,8,fmtBits[8]===1);
+for(let i=9;i<15;i++)set(14-i,8,fmtBits[i]===1);
+for(let i=0;i<7;i++)set(size-1-i,8,fmtBits[i]===1);
+for(let i=7;i<15;i++)set(8,size-15+i,fmtBits[i]===1);
+let bitIdx=0;
+const totalBits=finalBytes.length*8;
+function nextBit(){
+if(bitIdx>=totalBits)return 0;
+const byte=finalBytes[bitIdx>>3];
+const bit=(byte>>(7-(bitIdx&7)))&1;
+bitIdx++;
+return bit;
+}
+let col=size-1;
+let upward=true;
+while(col>0){
+if(col===6)col--;
+for(let i=0;i<size;i++){
+const r=upward?size-1-i:i;
+for(let cc=0;cc<2;cc++){
+const c=col-cc;
+if(used[r][c])continue;
+let bit=nextBit();
+if((r+c)%2===0)bit=bit^1;
+m[r][c]=bit===1;
+used[r][c]=true;
+}
+}
+upward=!upward;
+col-=2;
+}
+return m;
+}
+function renderTotpQr(){
+if(!totpSetup)return;
+const canvas=document.getElementById('totpQr');
+if(!canvas)return;
+const mtx=qrMatrix(totpSetup.uri);
+if(!mtx){canvas.style.display='none';return;}
+const n=mtx.length;
+const scale=5;
+const quiet=4;
+canvas.width=(n+quiet*2)*scale;
+canvas.height=(n+quiet*2)*scale;
+const g=canvas.getContext('2d');
+g.fillStyle='#ffffff';
+g.fillRect(0,0,canvas.width,canvas.height);
+g.fillStyle='#000000';
+for(let r=0;r<n;r++)for(let c=0;c<n;c++){
+if(mtx[r][c])g.fillRect((c+quiet)*scale,(r+quiet)*scale,scale,scale);
+}
 }
 function setupManage(){
 document.getElementById('btnAddDevice').addEventListener('click',function(){openDeviceModal(null);});
@@ -1698,14 +2123,41 @@ if(e.key!=='Escape')return;
 closeDeviceModal();
 closeConnModal();
 cancelConnectMode();
+hideCtxMenu();
 });
+document.addEventListener('click',hideCtxMenu);
+document.getElementById('mapSvg').addEventListener('contextmenu',function(e){
+e.preventDefault();
+showCanvasMenu(e);
+});
+const layerMap={lyVlan:'vlan',lyCable:'cable',lySvc:'svc',lyBlocked:'blocked',lyHost:'host'};
+for(const id in layerMap){
+if(!Object.prototype.hasOwnProperty.call(layerMap,id))continue;
+document.getElementById(id).addEventListener('change',(function(key,el){
+return function(){layers[key]=el.checked;renderMap();};
+})(layerMap[id],document.getElementById(id)));
+}
+document.getElementById('totpInput').addEventListener('keydown',function(e){
+if(e.key==='Enter')saveConfigNow();
+});
+if(totpSetup){
+const tm=document.getElementById('totpModal');
+function openTotp(){tm.style.display='flex';renderTotpQr();}
+document.getElementById('btnTotpClose').addEventListener('click',function(){tm.style.display='none';});
+document.getElementById('btnTotpOk').addEventListener('click',function(){tm.style.display='none';document.getElementById('totpInput').focus();});
+tm.addEventListener('click',function(e){if(e.target===tm)tm.style.display='none';});
+const mfaLink=document.getElementById('mfaLink');
+if(mfaLink)mfaLink.addEventListener('click',function(e){e.preventDefault();openTotp();});
+openTotp();
+}
+if(initialDirty)markDirty();
 window.addEventListener('beforeunload',function(e){
 if(!dirty)return;
 e.preventDefault();
 e.returnValue='';
 });
 const notice=document.getElementById('saveNotice');
-if(notice)setTimeout(function(){notice.style.display='none';},2500);
+if(notice&&notice.classList.contains('ok'))setTimeout(function(){notice.style.display='none';},2500);
 }
 function setupSearch(){
 const input=document.getElementById('searchInput');
