@@ -60,6 +60,26 @@ if(!isset($base['connectionStyles']['DEFAULT']['color']))$base['connectionStyles
 if(!isset($base['groupStyles']['Unbekannt'])||!is_array($base['groupStyles']['Unbekannt']))$base['groupStyles']['Unbekannt']=['fill'=>'#ffffff','stroke'=>'#d1d5db'];
 return $base;
 }
+function nw_ip_in_cidr($ip,$cidr){
+$p=explode('/',(string)$cidr);
+if(count($p)!==2)return false;
+$bits=(int)$p[1];
+$base=ip2long($p[0]);
+$val=ip2long((string)$ip);
+if($base===false||$val===false||$bits<0||$bits>32)return false;
+if($bits===0)return true;
+$mask=$bits===32?0xFFFFFFFF:(~((1<<(32-$bits))-1))&0xFFFFFFFF;
+return(($base&$mask)===($val&$mask));
+}
+function nw_ip_covered($ip,$vlanGroups){
+foreach($vlanGroups as $k=>$label){
+$k=(string)$k;
+if($k==='')continue;
+if(strpos($k,'/')!==false){if(nw_ip_in_cidr($ip,$k))return true;}
+elseif(strpos($ip,$k)===0)return true;
+}
+return false;
+}
 function applyDevicesDerivedDefaults(&$cfg){
 foreach($cfg['devices'] as $item){
 if(!is_array($item))continue;
@@ -69,7 +89,7 @@ $parts=explode('.',$ip);
 if(count($parts)===4){
 $valid=true;
 for($i=0;$i<4;$i++){if(!ctype_digit($parts[$i])||(int)$parts[$i]>255){$valid=false;break;}}
-if($valid){
+if($valid&&!nw_ip_covered($ip,$cfg['vlanGroups'])){
 $prefix=$parts[0].'.'.$parts[1].'.'.$parts[2].'.';
 if(!array_key_exists($prefix,$cfg['vlanGroups']))$cfg['vlanGroups'][$prefix]=$prefix.'0/24';
 }
@@ -244,19 +264,69 @@ if(p.length!==4)return'Unbekannt';
 for(let i=0;i<4;i++){const n=Number(p[i]);if(!Number.isInteger(n)||n<0||n>255)return'Unbekannt';}
 return p[0]+'.'+p[1]+'.'+p[2]+'.0/24';
 }
+function ipToInt(ip){
+const p=String(ip).split('.');
+if(p.length!==4)return null;
+let v=0;
+for(let i=0;i<4;i++){const n=Number(p[i]);if(!Number.isInteger(n)||n<0||n>255)return null;v=v*256+n;}
+return v;
+}
+function ipInCidr(ip,cidr){
+const m=String(cidr).split('/');
+if(m.length!==2)return false;
+const bits=Number(m[1]);
+const base=ipToInt(m[0]);
+const val=ipToInt(ip);
+if(base===null||val===null||!Number.isInteger(bits)||bits<0||bits>32)return false;
+if(bits===0)return true;
+const mask=bits===32?0xFFFFFFFF:(~((1<<(32-bits))-1))>>>0;
+return((base&mask)>>>0)===((val&mask)>>>0);
+}
 function getGroupForDevice(d){
 const ip=tt(d.IP||d.ip||'');
 if(appConfig&&appConfig.vlanGroups){
 for(const pref in appConfig.vlanGroups){
-if(Object.prototype.hasOwnProperty.call(appConfig.vlanGroups,pref)){
-if(ip.startsWith(pref))return String(appConfig.vlanGroups[pref]);
-}
+if(!Object.prototype.hasOwnProperty.call(appConfig.vlanGroups,pref))continue;
+if(pref.indexOf('/')!==-1){if(ipInCidr(ip,pref))return String(appConfig.vlanGroups[pref]);}
+else if(pref!==''&&ip.startsWith(pref))return String(appConfig.vlanGroups[pref]);
 }
 }
 return getVlanKey(ip);
 }
+const typeCatalog={
+'Firewall':{icon:'firewall.svg',color:'#d9480f'},
+'Router':{icon:'router.svg',color:'#1c64d9'},
+'Switch':{icon:'switch.svg',color:'#0e94d4'},
+'Access Point':{icon:'wifi.svg',color:'#7c3aed'},
+'Server':{icon:'server.svg',color:'#334155'},
+'Windows-Server':{icon:'windows.svg',color:'#0078d4'},
+'Linux-Server':{icon:'linux.svg',color:'#1f2937'},
+'Domain-Controller':{icon:'ad.svg',color:'#1d4ed8'},
+'DNS-Server':{icon:'dns.svg',color:'#b45309'},
+'DHCP-Server':{icon:'dhcp.svg',color:'#0d9488'},
+'Hypervisor':{icon:'hypervisor.svg',color:'#15803d'},
+'Storage/NAS':{icon:'storage.svg',color:'#a16207'},
+'Backup':{icon:'backup.svg',color:'#0f766e'},
+'Datenbank':{icon:'database.svg',color:'#7e22ce'},
+'Mail-Server':{icon:'mail.svg',color:'#b91c1c'},
+'Web-Server':{icon:'web.svg',color:'#0284c7'},
+'Proxy':{icon:'proxy.svg',color:'#4b5563'},
+'VPN-Gateway':{icon:'vpn.svg',color:'#047857'},
+'RDP/Terminal-Server':{icon:'rdp.svg',color:'#0369a1'},
+'Monitoring':{icon:'monitoring.svg',color:'#374151'},
+'Drucker':{icon:'printer.svg',color:'#475569'},
+'Kamera':{icon:'camera.svg',color:'#6d28d9'},
+'VoIP-Telefon':{icon:'phone.svg',color:'#0891b2'},
+'USV':{icon:'ups.svg',color:'#65a30d'},
+'Cloud-Dienst':{icon:'cloud.svg',color:'#2563eb'},
+'IoT-Gerät':{icon:'iot.svg',color:'#9333ea'},
+'PC':{icon:'pc.svg',color:'#4338ca'},
+'Laptop':{icon:'laptop.svg',color:'#57534e'},
+'Gerät (Sonstiges)':{icon:'device.svg',color:'#6b7280'}
+};
 const typeIconDefaults=[
 {file:'firewall.svg',keys:['firewall','fortigate','fortinet','paloalto','palo-alto','sophos','pfsense','opnsense','checkpoint','watchguard','asa','fw']},
+{file:'vpn.svg',keys:['vpn','ipsec']},
 {file:'router.svg',keys:['router','mikrotik','edgerouter','fritz','gateway','gw']},
 {file:'switch.svg',keys:['switch','catalyst','procurve','nexus','cisco','sw']},
 {file:'wifi.svg',keys:['wifi','wlan','accesspoint','access-point','access point','access','unifi','capwap','ap']},
@@ -267,8 +337,8 @@ const typeIconDefaults=[
 {file:'mail.svg',keys:['mail','smtp','exchange','imap','pop3']},
 {file:'proxy.svg',keys:['proxy']},
 {file:'vpn.svg',keys:['vpn','ipsec']},
-{file:'rdp.svg',keys:['rdp','terminalserver','terminal-server','ts']},
-{file:'database.svg',keys:['database','mssql','oracle','mysql','postgres','mariadb','sql','db']},
+{file:'rdp.svg',keys:['rdp','terminalserver','terminal-server','terminal','ts']},
+{file:'database.svg',keys:['database','datenbank','mssql','oracle','mysql','postgres','mariadb','sql','db']},
 {file:'storage.svg',keys:['storage','netapp','synology','qnap','iscsi','nas','san']},
 {file:'backup.svg',keys:['backup','veeam']},
 {file:'monitoring.svg',keys:['monitoring','zabbix','prtg','nagios','grafana','snmp','syslog']},
@@ -300,6 +370,7 @@ function getTypeIconPath(type){
 const typ=tt(type);
 let file='';
 if(appConfig&&appConfig.typeIcons&&appConfig.typeIcons[typ])file=String(appConfig.typeIcons[typ]);
+if(file===''&&Object.prototype.hasOwnProperty.call(typeCatalog,typ))file=typeCatalog[typ].icon;
 if(file===''){
 if(typ==='')return'';
 file=getDefaultTypeIcon(typ);
@@ -307,16 +378,10 @@ file=getDefaultTypeIcon(typ);
 if(/^https?:\/\//i.test(file))return file;
 return iconBase+file;
 }
-function resolveDirectionLabel(v){
-const s=tt(v);
-if(s===''||s==='bidirectional'||s==='both')return'beide Richtungen';
-if(s==='source-to-target')return'Quelle → Ziel';
-if(s==='target-to-source')return'Ziel → Quelle';
-return s;
-}
 function getTypeColor(type){
 const typ=tt(type);
 if(appConfig&&appConfig.typeStyles&&appConfig.typeStyles[typ]&&appConfig.typeStyles[typ].color)return String(appConfig.typeStyles[typ].color);
+if(Object.prototype.hasOwnProperty.call(typeCatalog,typ))return typeCatalog[typ].color;
 const low=typ.toLowerCase();
 if(low.indexOf('fortigate')!==-1)return'#cc6600';
 if(low.indexOf('cisco')!==-1)return'#2563eb';
@@ -413,7 +478,7 @@ const tg=tt(c.target||'');
 const ct=tt(c.connType||c.service||'Unbekannt');
 const tgtIndex=resolveTargetIndex(ttg,tg);
 if(tgtIndex!==null&&nodePositions[i]&&nodePositions[tgtIndex]){
-edges.push({src:i,tgt:tgtIndex,connIndex:ci,connType:ct,direction:tt(c.direction||'')});
+edges.push({src:i,tgt:tgtIndex,connIndex:ci,connType:ct});
 }
 }
 }
@@ -571,9 +636,7 @@ path.setAttribute('stroke-width','1.4');
 path.setAttribute('stroke-opacity','0.9');
 path.setAttribute('fill','none');
 path.style.pointerEvents='none';
-const dirVal=tt(e.direction);
-if(dirVal==='source-to-target')path.setAttribute('marker-end','url(#'+markerFor(edgeColor)+')');
-else if(dirVal==='target-to-source')path.setAttribute('marker-start','url(#'+markerFor(edgeColor)+')');
+path.setAttribute('marker-end','url(#'+markerFor(edgeColor)+')');
 edgesLayer.appendChild(path);
 }
 for(let i=0;i<deviceData.length;i++){
@@ -590,6 +653,9 @@ r.setAttribute('r','16');
 r.setAttribute('fill','#f9fafb');
 r.setAttribute('stroke',getTypeColor(d.Type||d.type||''));
 r.setAttribute('stroke-width',selectedDeviceIndex===i?'2.0':'1.2');
+const kind=tt(d.Kind||d.kind||'');
+if(kind==='VM')r.setAttribute('stroke-dasharray','4 2');
+else if(kind==='Extern')r.setAttribute('stroke-dasharray','2 2');
 r.setAttribute('class','nodeCircle');
 g.appendChild(r);
 const iconHref=getTypeIconPath(d.Type||d.type||'');
@@ -644,8 +710,9 @@ let hay='';
 const hn=tt(d.Hostname||d.hostname||'');
 const ip=tt(d.IP||d.ip||'');
 const type=tt(d.Type||d.type||'');
+const kindHay=tt(d.Kind||d.kind||'');
 const vlan=getVlanKey(ip);
-hay=(hn+' '+ip+' '+type+' '+vlan).toLowerCase();
+hay=(hn+' '+ip+' '+type+' '+kindHay+' '+vlan).toLowerCase();
 const devNotes=tt(d.Notes||d.notes||'');
 if(devNotes)hay+=' '+devNotes.toLowerCase();
 const conns=Array.isArray(d.Connections)?d.Connections:[];
@@ -762,6 +829,8 @@ info.appendChild(row);
 addRow('Hostname',hnName);
 addRow('IP-Adresse',ip);
 addRow('Typ',tt(d.Type||d.type||''));
+const kindRow=tt(d.Kind||d.kind||'');
+if(kindRow!=='')addRow('Art',kindRow);
 addRow('VLAN / Netz',getVlanKey(ip));
 addRow('Gruppe',group);
 body.appendChild(info);
@@ -822,9 +891,12 @@ const dot=document.createElement('div');
 dot.className='connectionColorDot';
 dot.style.backgroundColor=getConnectionColor(connType);
 badge.appendChild(dot);
-const dir=document.createElement('span');
-dir.textContent=resolveDirectionLabel(c.direction);
-badge.appendChild(dir);
+const portB=Number(c.port||0);
+if(portB>0){
+const pb=document.createElement('span');
+pb.textContent='Port '+portB;
+badge.appendChild(pb);
+}
 right.appendChild(badge);
 head.appendChild(left);
 head.appendChild(right);
@@ -879,9 +951,12 @@ const dot=document.createElement('div');
 dot.className='connectionColorDot';
 dot.style.backgroundColor=getConnectionColor(connType);
 badge.appendChild(dot);
-const dir=document.createElement('span');
-dir.textContent=resolveDirectionLabel(c.direction);
-badge.appendChild(dir);
+const portB=Number(c.port||0);
+if(portB>0){
+const pb=document.createElement('span');
+pb.textContent='Port '+portB;
+badge.appendChild(pb);
+}
 right.appendChild(badge);
 head.appendChild(left);
 head.appendChild(right);
@@ -933,15 +1008,15 @@ const lbl1=document.createElement('span');
 lbl1.textContent=connType;
 typeBadge.appendChild(lbl1);
 badges.appendChild(typeBadge);
-const dirBadge=document.createElement('div');
-dirBadge.className='badge';
-const dot2=document.createElement('div');
-dot2.className='badgeDot';
-dirBadge.appendChild(dot2);
+const portBadgeNum=Number(c.port||0);
+if(portBadgeNum>0){
+const portBadge=document.createElement('div');
+portBadge.className='badge';
 const lbl2=document.createElement('span');
-lbl2.textContent=resolveDirectionLabel(c.direction);
-dirBadge.appendChild(lbl2);
-badges.appendChild(dirBadge);
+lbl2.textContent='Port '+portBadgeNum;
+portBadge.appendChild(lbl2);
+badges.appendChild(portBadge);
+}
 body.innerHTML='';
 const stInfo=document.createElement('div');
 stInfo.className='sectionTitle';
