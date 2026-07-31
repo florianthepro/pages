@@ -197,16 +197,25 @@ if (preg_match('#^/categories/([a-z0-9_-]+)(/.*)?$#', $path, $m)) {
             $found ? liarc_json(['ok' => true]) : liarc_json_error('entry_not_found', 404);
         }
         if ($method === 'DELETE') {
+            // es wird nie geloescht, nur archiviert
             $lock = liarc_user_lock($user['uid']);
             $vault = liarc_vault_load($user['uid'], $user['dek']);
-            $before = count($vault['entries'][$catKey] ?? []);
-            $vault['entries'][$catKey] = array_values(array_filter(
-                $vault['entries'][$catKey] ?? [], fn($e) => $e['id'] !== $entryId
-            ));
-            $found = count($vault['entries'][$catKey]) < $before;
+            $found = false;
+            if (isset($vault['entries'][$catKey])) {
+                foreach ($vault['entries'][$catKey] as &$e) {
+                    if ($e['id'] === $entryId) {
+                        $e['status'] = 'old';
+                        $e['updated'] = liarc_now();
+                        unset($e['me']);
+                        $found = true;
+                        break;
+                    }
+                }
+                unset($e);
+            }
             if ($found) liarc_vault_save($user['uid'], $user['dek'], $vault);
             liarc_user_unlock($lock);
-            $found ? liarc_json(['ok' => true]) : liarc_json_error('entry_not_found', 404);
+            $found ? liarc_json(['ok' => true, 'archived' => true]) : liarc_json_error('entry_not_found', 404);
         }
     }
 }

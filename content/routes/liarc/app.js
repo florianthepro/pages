@@ -70,10 +70,12 @@
         });
     }
 
-    document.querySelectorAll('form[action*="v=logout"]').forEach(function (f) {
+    document.querySelectorAll('form[action*="v=logout"], form input[name="action"][value="logout"]').forEach(function (el) {
+        var f = el.tagName === 'FORM' ? el : el.form;
+        if (!f || f.dataset.lo) return;
+        f.dataset.lo = '1';
         f.addEventListener('submit', clearDevice);
     });
-
     // maskierte Werte (Passwoerter usw.) per Tipp aufdecken
     document.querySelectorAll('button.secret').forEach(function (b) {
         b.addEventListener('click', function () {

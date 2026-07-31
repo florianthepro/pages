@@ -44,7 +44,7 @@ GET    /api/categories/{key}/entries
 POST   /api/categories/{key}/entries            series {"value","at?","note?"} / records {"fields":{k:v}}
 PATCH  /api/categories/{key}/entries/{eid}      {"status"} / {"note"} / {"me":true}
                                                 / series {"value","at"} / records {"fields":{k:v}} (teilweise)
-DELETE /api/categories/{key}/entries/{eid}
+DELETE /api/categories/{key}/entries/{eid}      archiviert nur (status old)
 ```
 
 Feldtypen: text, number, date (YYYY-MM-DD), phone, note, secret.

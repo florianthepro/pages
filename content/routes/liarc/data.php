@@ -52,25 +52,21 @@ switch ($do) {
             liarc_user_unlock($lock);
             liarc_redirect('index', ['cat' => $catKey, 'error' => $res['error']]);
         }
-        // mit id: bestehenden eintrag aktualisieren (id/erstellt/status/ich bleiben)
-        $updated = false;
+        // bearbeiten = neue version; die alte wandert ins archiv (nichts wird geloescht)
         if ($entryId !== '' && isset($vault['entries'][$catKey])) {
             foreach ($vault['entries'][$catKey] as &$e) {
                 if ($e['id'] === $entryId) {
-                    $keep = ['id' => $e['id'], 'created' => $e['created'],
-                        'status' => $e['status'] ?? null, 'me' => $e['me'] ?? null];
-                    $e = $res['entry'];
-                    $e['id'] = $keep['id'];
-                    $e['created'] = $keep['created'];
-                    if ($keep['status'] !== null) $e['status'] = $keep['status'];
-                    if (!empty($keep['me'])) $e['me'] = true;
-                    $updated = true;
+                    if (!empty($e['me'])) $res['entry']['me'] = true;
+                    $res['entry']['prev'] = $e['id'];
+                    $e['status'] = 'old';
+                    $e['updated'] = liarc_now();
+                    unset($e['me']);
                     break;
                 }
             }
             unset($e);
         }
-        if (!$updated) $vault['entries'][$catKey][] = $res['entry'];
+        $vault['entries'][$catKey][] = $res['entry'];
         liarc_vault_save($user['uid'], $user['dek'], $vault);
         break;
 
@@ -116,12 +112,6 @@ switch ($do) {
         }
         break;
 
-    case 'entry_del':
-        $vault['entries'][$catKey] = array_values(array_filter(
-            $vault['entries'][$catKey] ?? [], fn($e) => $e['id'] !== $entryId
-        ));
-        liarc_vault_save($user['uid'], $user['dek'], $vault);
-        break;
 }
 
 liarc_user_unlock($lock);
