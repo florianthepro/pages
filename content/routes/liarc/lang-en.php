@@ -107,4 +107,6 @@ return [
     'i.continue' => 'continue in browser',
     'nav.home' => 'Overview',
     'st.lang' => 'Language',
+    'st.delaccount' => 'Delete account',
+    'st.delaccount_sure' => 'Permanently delete account and ALL data?',
 ];

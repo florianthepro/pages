@@ -38,6 +38,18 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $name = liarc_cut(trim((string)($_POST['name'] ?? 'API')), 80);
         $newToken = liarc_device_create($user['uid'], $user['dek'], $name !== '' ? $name : 'API', 'api')['token'];
     }
+    if ($act === 'delaccount') {
+        if (liarc_account_delete($user['uid'], (string)($_POST['pw'] ?? ''))) {
+            liarc_session_logout();
+            liarc_redirect('auth', ['v' => 'register']);
+        }
+        $error = 'auth.err_login';
+    }
+    if ($act === 'logout') {
+        if (!empty($user['device'])) liarc_device_revoke($user['uid'], $user['device']);
+        liarc_session_logout();
+        liarc_redirect('auth', ['v' => 'login']);
+    }
 }
 
 $devices = liarc_devices_list($user['uid'], $user['device']);
@@ -122,4 +134,22 @@ X-LIARC-User: <?= h($username) ?></pre>
         <button type="submit" class="iconbtn"><?= ic('upload', t('st.import')) ?></button>
     </form>
 </div>
+
+<div class="card">
+    <form method="post" action="<?= h(liarc_url('settings')) ?>">
+        <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+        <input type="hidden" name="action" value="logout">
+        <button type="submit" class="iconbtn wide"><?= ic('logout', t('nav.logout')) ?><span class="btlabel"><?= h(t('nav.logout')) ?></span></button>
+    </form>
+</div>
+
+<details class="card slim">
+    <summary><?= ic('trash') ?><span><?= h(t('st.delaccount')) ?></span></summary>
+    <form method="post" action="<?= h(liarc_url('settings')) ?>" class="stack" data-confirm="<?= h(t('st.delaccount_sure')) ?>">
+        <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+        <input type="hidden" name="action" value="delaccount">
+        <input type="password" name="pw" autocomplete="current-password" placeholder="<?= h(t('auth.password')) ?>" required>
+        <button type="submit" class="iconbtn wide"><?= ic('trash', t('st.delaccount')) ?><span class="btlabel"><?= h(t('st.delaccount')) ?></span></button>
+    </form>
+</details>
 <?php liarc_foot();

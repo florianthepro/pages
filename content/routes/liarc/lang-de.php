@@ -107,4 +107,6 @@ return [
     'i.continue' => 'weiter im Browser',
     'nav.home' => 'Übersicht',
     'st.lang' => 'Sprache',
+    'st.delaccount' => 'Konto löschen',
+    'st.delaccount_sure' => 'Konto und ALLE Daten endgültig löschen?',
 ];

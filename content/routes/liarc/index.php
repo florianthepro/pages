@@ -29,7 +29,11 @@ if ($catKey === '' && isset($_GET['g']) && isset($groups[(string)$_GET['g']])) {
 }
 $cat = $catKey !== '' ? liarc_category($catKey) : null;
 
-// ohne Kategorie: die eine, saubere Hauptansicht (alle Bereiche als Liste)
+// ohne Kategorie: am PC direkt die erste Kategorie (Seitenleiste ist die Navigation),
+// am Handy die Startseite (alle Bereiche als Liste)
+if ($cat === null && !liarc_is_mobile()) {
+    liarc_redirect('index', ['cat' => $groups[array_key_first($groups)]['cats'][0]]);
+}
 if ($cat === null) {
     liarc_set_clean('/');
     liarc_head(t('nav.home'));
@@ -79,7 +83,7 @@ liarc_head(liarc_cat_name($cat), false, $cat['key']);
 $ranges = ['7' => t('r.7'), '30' => t('r.30'), '90' => t('r.90'), '365' => t('r.365'), 'all' => t('r.all')];
 $range = (string)($_GET['r'] ?? '30');
 if (!isset($ranges[$range])) $range = '30';
-$shown = $entries;
+$shown = array_values(array_filter($entries, fn($e) => ($e['status'] ?? 'active') === 'active'));
 if ($range !== 'all') {
     $cut = liarc_now() - (int)$range * 86400;
     $shown = array_values(array_filter($entries, fn($e) => $e['at'] >= $cut));
@@ -130,14 +134,39 @@ if (count($shown) > 0): ?>
         </div>
         <div class="rowact">
             <a href="<?= h(liarc_url('index', ['cat' => $cat['key'], 'r' => $range, 'edit' => $e['id']])) ?>" class="iconbtn"><?= ic('edit', t('a.edit')) ?></a>
-            <form method="post" action="<?= h(liarc_url('data', ['do' => 'entry_del', 'cat' => $cat['key'], 'id' => $e['id']])) ?>" data-confirm="<?= $confirm ?>" class="inline">
+            <form method="post" action="<?= h(liarc_url('data', ['do' => 'entry_status', 'cat' => $cat['key'], 'id' => $e['id']])) ?>" data-confirm="<?= $confirm ?>" class="inline">
                 <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-                <button type="submit" class="iconbtn"><?= ic('trash', t('a.delete')) ?></button>
+                <button type="submit" class="iconbtn"><?= ic('archive', t('a.archive')) ?></button>
             </form>
         </div>
     </div>
 <?php endforeach; ?>
 </div>
+<?php endif; ?>
+
+<?php
+$archivedSeries = array_values(array_filter($entries, fn($e) => ($e['status'] ?? 'active') === 'old'));
+usort($archivedSeries, fn($a, $b) => $b['at'] <=> $a['at']);
+if (count($archivedSeries) > 0): ?>
+<details class="card slim old">
+    <summary><?= ic('archive') ?><span><?= h(t('a.old')) ?> · <?= count($archivedSeries) ?></span></summary>
+    <div class="list">
+    <?php foreach ($archivedSeries as $e): ?>
+        <div class="rowitem">
+            <div class="rowmain">
+                <div class="p"><?= h((string)$e['value']) ?> <span class="dim"><?= h($cat['unit']) ?></span></div>
+                <div class="s"><?= h(date('Y-m-d H:i', $e['at'])) ?></div>
+            </div>
+            <div class="rowact">
+                <form method="post" action="<?= h(liarc_url('data', ['do' => 'entry_status', 'cat' => $cat['key'], 'id' => $e['id']])) ?>" class="inline">
+                    <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+                    <button type="submit" class="iconbtn"><?= ic('restore', t('a.restore')) ?></button>
+                </form>
+            </div>
+        </div>
+    <?php endforeach; ?>
+    </div>
+</details>
 <?php endif; ?>
 
 <?php else: /* records */ ?>
@@ -183,10 +212,6 @@ $row = function (array $e, bool $isOld) use ($cat, $csrf, $confirm, $editId) {
             <form method="post" action="<?= h(liarc_url('data', ['do' => 'entry_status', 'cat' => $cat['key'], 'id' => $e['id']])) ?>" class="inline">
                 <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
                 <button type="submit" class="iconbtn"><?= $isOld ? ic('restore', t('a.restore')) : ic('archive', t('a.archive')) ?></button>
-            </form>
-            <form method="post" action="<?= h(liarc_url('data', ['do' => 'entry_del', 'cat' => $cat['key'], 'id' => $e['id']])) ?>" data-confirm="<?= $confirm ?>" class="inline">
-                <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-                <button type="submit" class="iconbtn"><?= ic('trash', t('a.delete')) ?></button>
             </form>
         </div>
     </div>
