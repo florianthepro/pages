@@ -105,4 +105,6 @@ return [
     'st.import_sure' => 'Replace all entries with this import?',
     'err.import' => 'Invalid file',
     'i.continue' => 'continue in browser',
+    'nav.home' => 'Overview',
+    'st.lang' => 'Language',
 ];

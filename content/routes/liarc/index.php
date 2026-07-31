@@ -24,20 +24,35 @@ if ($vault === null) { liarc_session_logout(); liarc_redirect('auth', ['v' => 'l
 
 $groups = liarc_groups();
 $catKey = (string)($_GET['cat'] ?? '');
-// ohne Parameter: letzte Ansicht aus dem Browser-Cookie
-if ($catKey === '' && !isset($_GET['g']) && liarc_category((string)($_COOKIE['liarc_view'] ?? '')) !== null) {
-    $catKey = (string)$_COOKIE['liarc_view'];
+if ($catKey === '' && isset($_GET['g']) && isset($groups[(string)$_GET['g']])) {
+    $catKey = $groups[(string)$_GET['g']]['cats'][0];
 }
 $cat = $catKey !== '' ? liarc_category($catKey) : null;
-$group = $cat !== null ? liarc_group_of($cat['key']) : (string)($_GET['g'] ?? array_key_first($groups));
-if (!isset($groups[$group])) $group = array_key_first($groups);
-if ($cat === null) $cat = liarc_category($groups[$group]['cats'][0]);
 
-// aktuelle Ansicht merken, damit "/" ohne sichtbare Parameter reicht
-setcookie('liarc_view', $cat['key'], [
-    'expires' => liarc_now() + 31536000, 'path' => '/',
-    'secure' => liarc_is_https(), 'httponly' => false, 'samesite' => 'Lax',
-]);
+// ohne Kategorie: die eine, saubere Hauptansicht (alle Bereiche als Liste)
+if ($cat === null) {
+    liarc_set_clean('/');
+    liarc_head(t('nav.home'));
+    echo '<div class="pagehead">'.ic('home').'<span>'.h(t('nav.home')).'</span></div>';
+    foreach ($groups as $g => $gd) {
+        echo '<div class="hsec">'.h(t('g.'.$g)).'</div><div class="card list">';
+        foreach ($gd['cats'] as $ck) {
+            $c = liarc_category($ck);
+            if ($c === null) continue;
+            $st = liarc_category_stats($c, $vault['entries'][$ck] ?? []);
+            if ($c['kind'] === 'series') {
+                $right = $st['latest'] !== null ? h((string)$st['latest']['value']).' <span class="dim">'.h($c['unit']).'</span>' : '<span class="dim">·</span>';
+            } else {
+                $right = '<span class="dim">'.(int)($st['active'] ?? 0).'</span>';
+            }
+            echo '<a class="rowitem hrow" href="'.h(liarc_url('index', ['cat' => $ck])).'">'
+                .ic($c['icon']).'<span class="hname">'.h(liarc_cat_name($c)).'</span>'
+                .'<span class="hval">'.$right.'</span>'.ic('chevron').'</a>';
+        }
+        echo '</div>';
+    }
+    liarc_foot();
+}
 
 $entries = $vault['entries'][$cat['key']] ?? [];
 $csrf = liarc_csrf_token();
@@ -48,25 +63,12 @@ $editId = (string)($_GET['edit'] ?? '');
 $editEntry = null;
 foreach ($entries as $e) if ($e['id'] === $editId) $editEntry = $e;
 
+liarc_set_clean('/'.$cat['key']);
 liarc_head(liarc_cat_name($cat), false, $cat['key']);
 ?>
-<div class="pagehead"><?= ic($cat['icon']) ?><span><?= h(liarc_cat_name($cat)) ?></span></div>
-<div class="mobilenav">
-<nav class="groupbar">
-<?php foreach ($groups as $g => $gd): ?>
-    <a href="<?= h(liarc_url('index', ['g' => $g])) ?>" class="group<?= $g === $group ? ' active' : '' ?>">
-        <?= ic($gd['icon']) ?><span><?= h(t('g.'.$g)) ?></span>
-    </a>
-<?php endforeach; ?>
-</nav>
-
-<nav class="catbar">
-<?php foreach ($groups[$group]['cats'] as $ck): $c = liarc_category($ck); if ($c === null) continue; ?>
-    <a href="<?= h(liarc_url('index', ['cat' => $ck])) ?>" class="chip<?= $ck === $cat['key'] ? ' active' : '' ?>">
-        <?= ic($c['icon']) ?><span><?= h(liarc_cat_name($c)) ?></span>
-    </a>
-<?php endforeach; ?>
-</nav>
+<div class="cathead">
+    <a href="<?= h(liarc_url()) ?>" class="iconbtn back"><?= ic('back', t('a.back')) ?></a>
+    <?= ic($cat['icon']) ?><span><?= h(liarc_cat_name($cat)) ?></span>
 </div>
 
 <?php if (!empty($_GET['error'])): ?><p class="error"><?= h(t((string)$_GET['error'])) ?></p><?php endif; ?>

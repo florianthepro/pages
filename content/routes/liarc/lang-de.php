@@ -105,4 +105,6 @@ return [
     'st.import_sure' => 'Alle Einträge durch den Import ersetzen?',
     'err.import' => 'Ungültige Datei',
     'i.continue' => 'weiter im Browser',
+    'nav.home' => 'Übersicht',
+    'st.lang' => 'Sprache',
 ];
