@@ -60,7 +60,8 @@ if ($v === 'install') {
     <div data-install-other class="hidden steps">
         <p><?= ic('plus') ?><?= h(t('i.other')) ?></p>
     </div>
-    <p><a href="<?= h(liarc_url('auth', ['v' => 'login'])) ?>"><?= h(t('a.back')) ?></a></p>
+    <p><a href="<?= h(liarc_url('auth', ['v' => 'login'])) ?>"><?= h(t('a.back')) ?></a>
+    <?php if (liarc_user() !== null): ?> · <a href="#" data-continue class="dim"><?= h(t('i.continue')) ?></a><?php endif; ?></p>
 </div>
     <?php
     liarc_foot();

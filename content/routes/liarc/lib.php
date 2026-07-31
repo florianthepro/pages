@@ -257,8 +257,11 @@ function liarc_next_lang(): string {
 
 // ---- http / ui -----------------------------------------------------------
 
+// immer absolut auf das index.php-Verzeichnis, sonst haengen relative
+// ?_page=-Links an huebschen Pfaden wie /login (Redirect-Schleife)
 function liarc_url(string $page = 'index', array $params = []): string {
-    return '?'.http_build_query(['_page' => $page] + $params);
+    $base = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
+    return $base.'/?'.http_build_query(['_page' => $page] + $params);
 }
 
 function liarc_redirect(string $page = 'index', array $params = []): never {

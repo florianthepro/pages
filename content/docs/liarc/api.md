@@ -30,6 +30,7 @@ X-LIARC-User: flo
 
 ```
 GET    /api/me
+GET    /api/export                              alle eintraege als JSON
 GET    /api/devices
 DELETE /api/devices/{id}
 
@@ -41,7 +42,8 @@ GET    /api/categories/{key}
 GET    /api/categories/{key}/stats              bei series inkl. points
 GET    /api/categories/{key}/entries
 POST   /api/categories/{key}/entries            series {"value","at?","note?"} / records {"fields":{k:v}}
-PATCH  /api/categories/{key}/entries/{eid}      {"status":"active|old"} / {"note"} / {"me":true}
+PATCH  /api/categories/{key}/entries/{eid}      {"status"} / {"note"} / {"me":true}
+                                                / series {"value","at"} / records {"fields":{k:v}} (teilweise)
 DELETE /api/categories/{key}/entries/{eid}
 ```
 
