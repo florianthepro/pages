@@ -8,9 +8,21 @@ if (!defined('LIARC_LIB')) {
 liarc_boot(get_defined_vars());
 liarc_i18n_init();
 
+$user = liarc_require_user();
+
+// Export: kompletter Datenbestand als JSON-Download (nur lesend, per Link)
+if (($_GET['do'] ?? '') === 'export' && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET') {
+    $vault = liarc_vault_load($user['uid'], $user['dek']);
+    if ($vault === null) liarc_redirect();
+    header('Content-Type: application/json; charset=utf-8');
+    header('Content-Disposition: attachment; filename="liarc-export-'.date('Y-m-d').'.json"');
+    echo json_encode(['liarc' => 1, 'exported' => date('c'),
+        'username' => liarc_username($user['uid']), 'entries' => $vault['entries'] ?? []], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+    exit;
+}
+
 // Schreib-Endpunkte des Webinterfaces (nur POST, mit CSRF)
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') liarc_redirect();
-$user = liarc_require_user();
 liarc_csrf_check();
 
 $do = (string)($_GET['do'] ?? '');
@@ -26,7 +38,7 @@ if ($do === 'provision') {
 }
 
 $cat = liarc_category($catKey);
-if ($cat === null) liarc_redirect();
+if ($cat === null && $do !== 'import') liarc_redirect();
 
 $lock = liarc_user_lock($user['uid']);
 $vault = liarc_vault_load($user['uid'], $user['dek']);
@@ -34,14 +46,50 @@ if ($vault === null) { liarc_user_unlock($lock); liarc_redirect(); }
 
 switch ($do) {
     case 'entry_add':
+    case 'entry_save':
         $res = liarc_entry_build($cat, $_POST);
         if (isset($res['error'])) {
             liarc_user_unlock($lock);
             liarc_redirect('index', ['cat' => $catKey, 'error' => $res['error']]);
         }
+        // bearbeiten = neue version; die alte wandert ins archiv (nichts wird geloescht)
+        if ($entryId !== '' && isset($vault['entries'][$catKey])) {
+            foreach ($vault['entries'][$catKey] as &$e) {
+                if ($e['id'] === $entryId) {
+                    if (!empty($e['me'])) $res['entry']['me'] = true;
+                    $res['entry']['prev'] = $e['id'];
+                    $e['status'] = 'old';
+                    $e['updated'] = liarc_now();
+                    unset($e['me']);
+                    break;
+                }
+            }
+            unset($e);
+        }
         $vault['entries'][$catKey][] = $res['entry'];
         liarc_vault_save($user['uid'], $user['dek'], $vault);
         break;
+
+    case 'import':
+        // ersetzt alle eintraege durch einen frueheren export (backup .bak bleibt)
+        $raw = '';
+        if (!empty($_FILES['file']['tmp_name']) && is_uploaded_file($_FILES['file']['tmp_name'])) {
+            $raw = (string)file_get_contents($_FILES['file']['tmp_name']);
+        }
+        $data = json_decode($raw, true);
+        if (!is_array($data) || (int)($data['liarc'] ?? 0) !== 1 || !is_array($data['entries'] ?? null)) {
+            liarc_user_unlock($lock);
+            liarc_redirect('settings', ['error' => 'err.import']);
+        }
+        $clean = [];
+        foreach ($data['entries'] as $ck => $list) {
+            if (liarc_category((string)$ck) === null || !is_array($list)) continue;
+            $clean[$ck] = array_values(array_filter($list, 'is_array'));
+        }
+        $vault['entries'] = $clean;
+        liarc_vault_save($user['uid'], $user['dek'], $vault);
+        liarc_user_unlock($lock);
+        liarc_redirect('settings', ['ok' => '1']);
 
     case 'entry_status':
         if (isset($vault['entries'][$catKey])) {
@@ -64,12 +112,6 @@ switch ($do) {
         }
         break;
 
-    case 'entry_del':
-        $vault['entries'][$catKey] = array_values(array_filter(
-            $vault['entries'][$catKey] ?? [], fn($e) => $e['id'] !== $entryId
-        ));
-        liarc_vault_save($user['uid'], $user['dek'], $vault);
-        break;
 }
 
 liarc_user_unlock($lock);

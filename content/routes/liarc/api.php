@@ -85,6 +85,13 @@ if ($path === '/me' && $method === 'GET') {
     liarc_json(['ok' => true, 'username' => liarc_username($user['uid']), 'device' => $user['device']]);
 }
 
+if ($path === '/export' && $method === 'GET') {
+    $vault = liarc_vault_load($user['uid'], $user['dek']);
+    if ($vault === null) liarc_json_error('vault_unreadable', 500);
+    liarc_json(['ok' => true, 'liarc' => 1, 'username' => liarc_username($user['uid']),
+        'entries' => $vault['entries'] ?? []]);
+}
+
 if ($path === '/devices' && $method === 'GET') {
     liarc_json(['ok' => true, 'devices' => liarc_devices_list($user['uid'], $user['device'])]);
 }
@@ -164,6 +171,20 @@ if (preg_match('#^/categories/([a-z0-9_-]+)(/.*)?$#', $path, $m)) {
                     if ($e['id'] === $entryId) {
                         if (isset($in['status']) && in_array($in['status'], ['active', 'old'], true)) $e['status'] = $in['status'];
                         if (isset($in['note'])) $e['note'] = liarc_cut((string)$in['note'], 200);
+                        // inhalte aendern: series value/at, records fields
+                        if ($cat['kind'] === 'series' && (isset($in['value']) || isset($in['at']))) {
+                            $res = liarc_entry_build($cat, ['value' => $in['value'] ?? $e['value'], 'at' => $in['at'] ?? $e['at'], 'note' => $in['note'] ?? ($e['note'] ?? '')]);
+                            if (isset($res['error'])) { liarc_user_unlock($lock); liarc_json_error($res['error'], 422); }
+                            $e['value'] = $res['entry']['value'];
+                            $e['at'] = $res['entry']['at'];
+                            $e['note'] = $res['entry']['note'];
+                        }
+                        if ($cat['kind'] === 'records' && isset($in['fields']) && is_array($in['fields'])) {
+                            $merged = array_merge($e['fields'] ?? [], $in['fields']);
+                            $res = liarc_entry_build($cat, ['fields' => $merged]);
+                            if (isset($res['error'])) { liarc_user_unlock($lock); liarc_json_error($res['error'], 422); }
+                            $e['fields'] = $res['entry']['fields'];
+                        }
                         $e['updated'] = liarc_now();
                         $found = true;
                         break;
@@ -176,16 +197,25 @@ if (preg_match('#^/categories/([a-z0-9_-]+)(/.*)?$#', $path, $m)) {
             $found ? liarc_json(['ok' => true]) : liarc_json_error('entry_not_found', 404);
         }
         if ($method === 'DELETE') {
+            // es wird nie geloescht, nur archiviert
             $lock = liarc_user_lock($user['uid']);
             $vault = liarc_vault_load($user['uid'], $user['dek']);
-            $before = count($vault['entries'][$catKey] ?? []);
-            $vault['entries'][$catKey] = array_values(array_filter(
-                $vault['entries'][$catKey] ?? [], fn($e) => $e['id'] !== $entryId
-            ));
-            $found = count($vault['entries'][$catKey]) < $before;
+            $found = false;
+            if (isset($vault['entries'][$catKey])) {
+                foreach ($vault['entries'][$catKey] as &$e) {
+                    if ($e['id'] === $entryId) {
+                        $e['status'] = 'old';
+                        $e['updated'] = liarc_now();
+                        unset($e['me']);
+                        $found = true;
+                        break;
+                    }
+                }
+                unset($e);
+            }
             if ($found) liarc_vault_save($user['uid'], $user['dek'], $vault);
             liarc_user_unlock($lock);
-            $found ? liarc_json(['ok' => true]) : liarc_json_error('entry_not_found', 404);
+            $found ? liarc_json(['ok' => true, 'archived' => true]) : liarc_json_error('entry_not_found', 404);
         }
     }
 }

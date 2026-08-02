@@ -39,20 +39,24 @@ Nutzerdaten liegen NUR lokal unter `$liarc_datadir` (Default `liarc-data/` neben
 
 ## Ansicht / URLs
 
-- Auto-Erkennung PC/Handy per CSS-Breakpoint: ab 920px Seitenleiste
-  (Gruppen + Kategorien, Footer-Icons), darunter Topbar + Tabs/Chips.
-- Sichtbare URL bleibt sauber: app.js ersetzt die Adresse nach dem Laden
-  durch den Pfad (/, /devices, /login, ...); die aktuelle Kategorie steht im
-  Cookie `liarc_view`, "/" oeffnet also immer die letzte Ansicht.
-- Direktpfade funktionieren trotzdem: /health (Gruppe), /heart (Kategorie),
-  /login usw. werden von liarc_pretty_route() aufgeloest.
+- Getrennte GUIs (Server erkennt das Geraet per User-Agent):
+  Handy = App-Aufbau: "/" ist die Startseite (alle Bereiche als gruppierte
+  Liste mit Wert/Anzahl rechts), Unteransichten mit Zurueck-Pfeil, feste
+  Tab-Leiste unten (Start, Einstellungen) - keine Seitenleiste.
+  PC = Seitenleiste als Navigation, "/" oeffnet direkt die erste Kategorie -
+  keine Uebersichtsseite (nie beides).
+- Geraete & API-Schluessel sind Teil der Einstellungen (eine Seite mit
+  Abschnitten: Konto, Geraete, Sprache, Export/Import); /devices leitet um.
+- Sichtbare URL bleibt sauber: app.js ersetzt die Adresse durch den vom
+  Server vorgegebenen Pfad (data-clean): "/" fuer die Uebersicht,
+  /heart usw. fuer Kategorien - Reload funktioniert ueber liarc_pretty_route().
 
 ## Gruppen & Kategorien (fest im Code)
 
 Nutzer legen keine Kategorien an. Definition in lib.php:
 
 - Gruppen: contacts (Kontakte), health (Gesundheit), security (Sicherheit), misc (Mehr)
-- Kategorien: contacts (mit "Ich"-Markierung wie iOS, genau ein Eintrag), phones,
+- Kategorien: contacts (Nummern sind Teil des Kontakts; "Ich"-Markierung wie iOS),
   heart, weight, height, steps, sleep, temp, medical,
   passwords (Dienst/Benutzer/Passwort/MFA), certs (Lizenzen/Zertifikate),
   serials (Geraete-Seriennummern), documents, notes
@@ -61,6 +65,13 @@ Nutzer legen keine Kategorien an. Definition in lib.php:
   secret (maskiert, per Tipp aufdecken)
 
 Vault pro Nutzer (eine verschluesselte JSON-Datei): `{entries: {catKey: [...]}}`.
+
+## Archiv statt Loeschen
+
+Es wird nie geloescht: Bearbeiten erzeugt eine neue Version (Verweis prev),
+die alte wandert mit Status old ins Archiv; auch Messwerte werden nur
+archiviert (Statistik/Chart zaehlen nur Aktive). API-DELETE archiviert.
+Einzige echte Loeschung: der Account (Passwortbestaetigung in den Einstellungen).
 
 ## Verschluesselung
 

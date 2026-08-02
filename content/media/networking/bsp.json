@@ -1,0 +1,1655 @@
+{
+  "typeIcons": [],
+  "serviceLabels": {
+    "BGP": "BGP Routing",
+    "OSPF": "OSPF Routing",
+    "Static-Routing": "Statische Route",
+    "IPsec-VPN": "VPN (IPsec)",
+    "SSL-VPN": "VPN (SSL)",
+    "VPN": "VPN",
+    "NTP": "Zeitdienst (NTP)",
+    "SYSLOG": "Syslog",
+    "SNMP": "Monitoring (SNMP)",
+    "HTTPS": "HTTPS",
+    "HTTPS-Admin": "HTTPS (Admin)",
+    "HTTP": "HTTP",
+    "HTTP-Proxy": "HTTP Proxy",
+    "SSH": "SSH",
+    "DNS": "DNS",
+    "DHCP": "DHCP",
+    "SMTP": "SMTP",
+    "RDP": "RDP",
+    "iSCSI": "Storage (iSCSI)",
+    "NFS": "Storage (NFS)",
+    "Backup-Proxy": "Backup Proxy",
+    "Backup-Agent": "Backup Agent",
+    "LDAP": "LDAP/AD",
+    "Kerberos": "Kerberos",
+    "RADIUS": "RADIUS/MFA",
+    "MSSQL": "SQL Server",
+    "POSTGRES": "PostgreSQL",
+    "ORACLE-DB": "Oracle Datenbank",
+    "SMB": "Dateifreigaben (SMB)",
+    "CAPWAP": "CAPWAP/WLAN",
+    "MQTT": "MQTT",
+    "OPC-UA": "OPC UA",
+    "Modbus-TCP": "Modbus TCP",
+    "Kabel": "Kabel (physisch)",
+    "Trunk": "VLAN Trunk",
+    "LACP": "Link Aggregation",
+    "Firewall-Rule": "Firewall-Regel",
+    "Reverse-Proxy": "Reverse Proxy",
+    "Load-Balancing": "Load Balancing",
+    "Replication": "Replikation",
+    "DEFAULT": "Verbindung"
+  },
+  "connectionStyles": {
+    "DEFAULT": {
+      "color": "#666666"
+    },
+    "Kabel": {
+      "color": "#111827"
+    },
+    "Trunk": {
+      "color": "#2563eb"
+    },
+    "LACP": {
+      "color": "#7c3aed"
+    },
+    "Firewall-Rule": {
+      "color": "#dc2626"
+    },
+    "HTTPS": {
+      "color": "#059669"
+    },
+    "HTTPS-Admin": {
+      "color": "#047857"
+    },
+    "HTTP-Proxy": {
+      "color": "#f59e0b"
+    },
+    "IPsec-VPN": {
+      "color": "#9333ea"
+    },
+    "iSCSI": {
+      "color": "#0891b2"
+    },
+    "Backup-Proxy": {
+      "color": "#ea580c"
+    },
+    "Replication": {
+      "color": "#0f766e"
+    },
+    "OPC-UA": {
+      "color": "#be123c"
+    },
+    "MQTT": {
+      "color": "#16a34a"
+    }
+  },
+  "vlanGroups": {
+    "10.0.0.": "WAN-Transit 10.0.0.0/24",
+    "10.10.10.": "Management VLAN 10 10.10.10.0/24",
+    "10.10.20.": "Server VLAN 20 10.10.20.0/24",
+    "10.10.30.": "Storage VLAN 30 10.10.30.0/24",
+    "10.10.40.": "Backup VLAN 40 10.10.40.0/24",
+    "10.10.50.": "DMZ VLAN 50 10.10.50.0/24",
+    "10.10.60.": "Client VLAN 60 10.10.60.0/24",
+    "10.10.70.": "Printer VLAN 70 10.10.70.0/24",
+    "10.10.80.": "WLAN Corporate VLAN 80 10.10.80.0/24",
+    "10.10.90.": "WLAN Guest VLAN 90 10.10.90.0/24",
+    "10.10.100.": "IoT VLAN 100 10.10.100.0/24",
+    "10.10.110.": "OT Produktion VLAN 110 10.10.110.0/24",
+    "10.10.120.": "Security VLAN 120 10.10.120.0/24",
+    "10.10.130.": "Dev/Test VLAN 130 10.10.130.0/24",
+    "10.10.140.": "Database VLAN 140 10.10.140.0/24",
+    "10.10.150.": "VDI VLAN 150 10.10.150.0/24",
+    "10.10.160.": "Monitoring VLAN 160 10.10.160.0/24",
+    "10.10.170.": "Identity VLAN 170 10.10.170.0/24",
+    "10.10.180.": "Proxy/Security Services VLAN 180 10.10.180.0/24",
+    "10.10.190.": "Remote Access VLAN 190 10.10.190.0/24"
+  },
+  "groupStyles": {
+    "Unbekannt": {
+      "fill": "#ffffff",
+      "stroke": "#d1d5db"
+    },
+    "WAN-Transit 10.0.0.0/24": {
+      "fill": "#fef2f2",
+      "stroke": "#ef4444"
+    },
+    "Management VLAN 10 10.10.10.0/24": {
+      "fill": "#eef2ff",
+      "stroke": "#6366f1"
+    },
+    "Server VLAN 20 10.10.20.0/24": {
+      "fill": "#eff6ff",
+      "stroke": "#3b82f6"
+    },
+    "Storage VLAN 30 10.10.30.0/24": {
+      "fill": "#ecfeff",
+      "stroke": "#06b6d4"
+    },
+    "Backup VLAN 40 10.10.40.0/24": {
+      "fill": "#fff7ed",
+      "stroke": "#f97316"
+    },
+    "DMZ VLAN 50 10.10.50.0/24": {
+      "fill": "#fff1f2",
+      "stroke": "#fb7185"
+    },
+    "Client VLAN 60 10.10.60.0/24": {
+      "fill": "#f0fdf4",
+      "stroke": "#22c55e"
+    },
+    "Printer VLAN 70 10.10.70.0/24": {
+      "fill": "#fafafa",
+      "stroke": "#737373"
+    },
+    "WLAN Corporate VLAN 80 10.10.80.0/24": {
+      "fill": "#f5f3ff",
+      "stroke": "#8b5cf6"
+    },
+    "WLAN Guest VLAN 90 10.10.90.0/24": {
+      "fill": "#fffbeb",
+      "stroke": "#f59e0b"
+    },
+    "IoT VLAN 100 10.10.100.0/24": {
+      "fill": "#f7fee7",
+      "stroke": "#84cc16"
+    },
+    "OT Produktion VLAN 110 10.10.110.0/24": {
+      "fill": "#fefce8",
+      "stroke": "#eab308"
+    },
+    "Security VLAN 120 10.10.120.0/24": {
+      "fill": "#fdf2f8",
+      "stroke": "#ec4899"
+    },
+    "Dev/Test VLAN 130 10.10.130.0/24": {
+      "fill": "#f8fafc",
+      "stroke": "#64748b"
+    },
+    "Database VLAN 140 10.10.140.0/24": {
+      "fill": "#f0f9ff",
+      "stroke": "#0ea5e9"
+    },
+    "VDI VLAN 150 10.10.150.0/24": {
+      "fill": "#f5f5f4",
+      "stroke": "#78716c"
+    },
+    "Monitoring VLAN 160 10.10.160.0/24": {
+      "fill": "#ecfdf5",
+      "stroke": "#10b981"
+    },
+    "Identity VLAN 170 10.10.170.0/24": {
+      "fill": "#ede9fe",
+      "stroke": "#7c3aed"
+    },
+    "Proxy/Security Services VLAN 180 10.10.180.0/24": {
+      "fill": "#fff7ed",
+      "stroke": "#ea580c"
+    },
+    "Remote Access VLAN 190 10.10.190.0/24": {
+      "fill": "#fdf4ff",
+      "stroke": "#c026d3"
+    }
+  },
+  "typeStyles": [],
+  "devices": [
+    {
+      "Hostname": "ISP-Router-01",
+      "IP": "10.0.0.1",
+      "Type": "Provider-Router",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "BGP",
+          "target": "Edge-Firewall-01",
+          "targetType": "hostname",
+          "Notes": "Primary Internet Uplink"
+        },
+        {
+          "connType": "Kabel",
+          "target": "WAN-Switch-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "ISP-Router-02",
+      "IP": "10.0.0.2",
+      "Type": "Provider-Router",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "BGP",
+          "target": "Edge-Firewall-02",
+          "targetType": "hostname",
+          "Notes": "Secondary Internet Uplink"
+        },
+        {
+          "connType": "Kabel",
+          "target": "WAN-Switch-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "WAN-Switch-01",
+      "IP": "10.0.0.10",
+      "Type": "WAN-Switch",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "LACP",
+          "target": "Edge-Firewall-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "LACP",
+          "target": "Edge-Firewall-02",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Edge-Firewall-01",
+      "IP": "10.10.10.1",
+      "Type": "Firewall",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "HA",
+          "target": "Edge-Firewall-02",
+          "targetType": "hostname",
+          "Notes": "Active/Passive Cluster Sync"
+        },
+        {
+          "connType": "Trunk",
+          "target": "Core-Switch-01",
+          "targetType": "hostname",
+          "Notes": "VLAN 10,20,30,40,50,60,80,90,100,110,120,130,140,150,160,170,180,190"
+        },
+        {
+          "connType": "IPsec-VPN",
+          "target": "Branch-Firewall-01",
+          "targetType": "hostname",
+          "Notes": "Standortkopplung Niederlassung"
+        },
+        {
+          "connType": "SSL-VPN",
+          "target": "VPN-Portal-01",
+          "targetType": "hostname",
+          "Notes": "Remote Mitarbeiter"
+        }
+      ]
+    },
+    {
+      "Hostname": "Edge-Firewall-02",
+      "IP": "10.10.10.2",
+      "Type": "Firewall",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "Trunk",
+          "target": "Core-Switch-02",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Core-Switch-01",
+      "IP": "10.10.10.11",
+      "Type": "Core-Switch",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "LACP",
+          "target": "Core-Switch-02",
+          "targetType": "hostname",
+          "Notes": "MLAG/Stack Interconnect"
+        },
+        {
+          "connType": "Trunk",
+          "target": "Distribution-Switch-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "Trunk",
+          "target": "Distribution-Switch-02",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "Trunk",
+          "target": "Datacenter-Switch-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "OSPF",
+          "target": "Edge-Firewall-01",
+          "targetType": "hostname",
+          "Notes": "Inter-VLAN Routing kontrolliert über Firewall"
+        }
+      ]
+    },
+    {
+      "Hostname": "Core-Switch-02",
+      "IP": "10.10.10.12",
+      "Type": "Core-Switch",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "Trunk",
+          "target": "Datacenter-Switch-02",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "Trunk",
+          "target": "Access-Switch-Floor1-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "Trunk",
+          "target": "Access-Switch-Floor2-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Distribution-Switch-01",
+      "IP": "10.10.10.21",
+      "Type": "Distribution-Switch",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "Trunk",
+          "target": "Access-Switch-Floor1-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "Trunk",
+          "target": "Access-Switch-Floor1-02",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Distribution-Switch-02",
+      "IP": "10.10.10.22",
+      "Type": "Distribution-Switch",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "Trunk",
+          "target": "Access-Switch-Floor2-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "Trunk",
+          "target": "Access-Switch-Floor2-02",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Datacenter-Switch-01",
+      "IP": "10.10.10.31",
+      "Type": "Datacenter-Switch",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "LACP",
+          "target": "Datacenter-Switch-02",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "Trunk",
+          "target": "Hypervisor-Cluster-Node-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "Trunk",
+          "target": "Hypervisor-Cluster-Node-02",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "iSCSI",
+          "target": "SAN-Storage-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Datacenter-Switch-02",
+      "IP": "10.10.10.32",
+      "Type": "Datacenter-Switch",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "Trunk",
+          "target": "Hypervisor-Cluster-Node-03",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "iSCSI",
+          "target": "SAN-Storage-02",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Access-Switch-Floor1-01",
+      "IP": "10.10.10.41",
+      "Type": "Access-Switch",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "Kabel",
+          "target": "Client-PC-001",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "Kabel",
+          "target": "Printer-Floor1-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "CAPWAP",
+          "target": "AP-Floor1-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Access-Switch-Floor1-02",
+      "IP": "10.10.10.42",
+      "Type": "Access-Switch",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "Kabel",
+          "target": "Client-PC-002",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "CAPWAP",
+          "target": "AP-Floor1-02",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Access-Switch-Floor2-01",
+      "IP": "10.10.10.43",
+      "Type": "Access-Switch",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "Kabel",
+          "target": "Client-PC-101",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "Kabel",
+          "target": "Printer-Floor2-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "CAPWAP",
+          "target": "AP-Floor2-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Access-Switch-Floor2-02",
+      "IP": "10.10.10.44",
+      "Type": "Access-Switch",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "CAPWAP",
+          "target": "AP-Floor2-02",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "Kabel",
+          "target": "IoT-Gateway-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Hypervisor-Cluster-Node-01",
+      "IP": "10.10.10.101",
+      "Type": "Hypervisor",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "iSCSI",
+          "target": "SAN-Storage-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "Backup-Agent",
+          "target": "Backup-Server-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Hypervisor-Cluster-Node-02",
+      "IP": "10.10.10.102",
+      "Type": "Hypervisor",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "iSCSI",
+          "target": "SAN-Storage-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "Backup-Agent",
+          "target": "Backup-Server-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Hypervisor-Cluster-Node-03",
+      "IP": "10.10.10.103",
+      "Type": "Hypervisor",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "iSCSI",
+          "target": "SAN-Storage-02",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "Backup-Agent",
+          "target": "Backup-Server-02",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "SAN-Storage-01",
+      "IP": "10.10.30.10",
+      "Type": "Storage",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "Replication",
+          "target": "SAN-Storage-02",
+          "targetType": "hostname",
+          "Notes": "Synchrone Replikation Storage VLAN"
+        },
+        {
+          "connType": "SNMP",
+          "target": "Monitoring-Server-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "SAN-Storage-02",
+      "IP": "10.10.30.11",
+      "Type": "Storage",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "SNMP",
+          "target": "Monitoring-Server-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Backup-Server-01",
+      "IP": "10.10.40.10",
+      "Type": "Backup",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "Backup-Proxy",
+          "target": "Backup-Proxy-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "SMB",
+          "target": "NAS-Backup-Repository-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Backup-Server-02",
+      "IP": "10.10.40.11",
+      "Type": "Backup",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "Replication",
+          "target": "Backup-Server-01",
+          "targetType": "hostname",
+          "Notes": "Backup-Konfigurationsreplikation"
+        },
+        {
+          "connType": "SMB",
+          "target": "NAS-Backup-Repository-02",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "NAS-Backup-Repository-01",
+      "IP": "10.10.40.20",
+      "Type": "NAS",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "NFS",
+          "target": "Backup-Server-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "NAS-Backup-Repository-02",
+      "IP": "10.10.40.21",
+      "Type": "NAS",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "NFS",
+          "target": "Backup-Server-02",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "DC-01",
+      "IP": "10.10.170.10",
+      "Type": "Domain-Controller",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "LDAP",
+          "target": "DC-02",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "DNS",
+          "target": "Client-PC-001",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "Kerberos",
+          "target": "RADIUS-MFA-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "NTP",
+          "target": "NTP-Server-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "DC-02",
+      "IP": "10.10.170.11",
+      "Type": "Domain-Controller",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "LDAP",
+          "target": "File-Server-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "DNS",
+          "target": "Mail-Gateway-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "DHCP-Server-01",
+      "IP": "10.10.20.20",
+      "Type": "DHCP",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "DHCP",
+          "target": "Client-PC-001",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "DHCP",
+          "target": "AP-Floor1-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "DHCP",
+          "target": "IoT-Gateway-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "NTP-Server-01",
+      "IP": "10.10.20.30",
+      "Type": "NTP",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "NTP",
+          "target": "Core-Switch-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "NTP",
+          "target": "Edge-Firewall-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "NTP",
+          "target": "SIEM-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "File-Server-01",
+      "IP": "10.10.20.40",
+      "Type": "Fileserver",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "SMB",
+          "target": "Client-PC-001",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "SMB",
+          "target": "Client-PC-002",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "Backup-Agent",
+          "target": "Backup-Server-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "App-Server-ERP-01",
+      "IP": "10.10.20.50",
+      "Type": "Application",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "MSSQL",
+          "target": "DB-MSSQL-Cluster-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "LDAP",
+          "target": "DC-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "HTTPS",
+          "target": "Reverse-Proxy-Internal-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "App-Server-CRM-01",
+      "IP": "10.10.20.51",
+      "Type": "Application",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "POSTGRES",
+          "target": "DB-PostgreSQL-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "HTTPS",
+          "target": "Reverse-Proxy-Internal-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "DB-MSSQL-Cluster-01",
+      "IP": "10.10.140.10",
+      "Type": "Database",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "Replication",
+          "target": "DB-MSSQL-Cluster-02",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "Backup-Agent",
+          "target": "Backup-Server-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "DB-MSSQL-Cluster-02",
+      "IP": "10.10.140.11",
+      "Type": "Database",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "MSSQL",
+          "target": "App-Server-ERP-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "DB-PostgreSQL-01",
+      "IP": "10.10.140.20",
+      "Type": "Database",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "POSTGRES",
+          "target": "App-Server-CRM-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "Backup-Agent",
+          "target": "Backup-Server-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "DMZ-Web-Frontend-01",
+      "IP": "10.10.50.10",
+      "Type": "Webserver",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "HTTPS",
+          "target": "WAF-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "HTTPS",
+          "target": "App-Server-ERP-01",
+          "targetType": "hostname",
+          "Notes": "Nur freigegebene API-Endpunkte"
+        }
+      ]
+    },
+    {
+      "Hostname": "DMZ-Web-Frontend-02",
+      "IP": "10.10.50.11",
+      "Type": "Webserver",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "HTTPS",
+          "target": "WAF-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "Load-Balancing",
+          "target": "Load-Balancer-DMZ-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "WAF-01",
+      "IP": "10.10.50.20",
+      "Type": "WAF",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "Reverse-Proxy",
+          "target": "DMZ-Web-Frontend-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "Reverse-Proxy",
+          "target": "DMZ-Web-Frontend-02",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "SYSLOG",
+          "target": "SIEM-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Load-Balancer-DMZ-01",
+      "IP": "10.10.50.30",
+      "Type": "Load-Balancer",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "Load-Balancing",
+          "target": "DMZ-Web-Frontend-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "Load-Balancing",
+          "target": "DMZ-Web-Frontend-02",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Mail-Gateway-01",
+      "IP": "10.10.50.40",
+      "Type": "Mail-Security",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "SMTP",
+          "target": "Mail-Server-Internal-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "DNS",
+          "target": "DC-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Mail-Server-Internal-01",
+      "IP": "10.10.20.60",
+      "Type": "Mailserver",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "SMTP",
+          "target": "Mail-Gateway-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "LDAP",
+          "target": "DC-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Forward-Proxy-01",
+      "IP": "10.10.180.10",
+      "Type": "Proxy",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "HTTP-Proxy",
+          "target": "Client-PC-001",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "HTTP-Proxy",
+          "target": "Client-PC-002",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "Firewall-Rule",
+          "target": "Edge-Firewall-01",
+          "targetType": "hostname",
+          "Notes": "Nur Proxy darf ins Internet für Client VLAN"
+        }
+      ]
+    },
+    {
+      "Hostname": "Reverse-Proxy-Internal-01",
+      "IP": "10.10.180.20",
+      "Type": "Reverse-Proxy",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "HTTPS",
+          "target": "App-Server-ERP-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "HTTPS",
+          "target": "App-Server-CRM-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "RADIUS-MFA-01",
+      "IP": "10.10.170.20",
+      "Type": "RADIUS",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "RADIUS",
+          "target": "WLAN-Controller-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "RADIUS",
+          "target": "VPN-Portal-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "LDAP",
+          "target": "DC-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "VPN-Portal-01",
+      "IP": "10.10.190.10",
+      "Type": "Remote-Access",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "SSL-VPN",
+          "target": "Edge-Firewall-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "RADIUS",
+          "target": "RADIUS-MFA-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "HTTPS-Admin",
+          "target": "Jump-Host-01",
+          "targetType": "hostname",
+          "Notes": "Remote Admins nur über Jump Host"
+        }
+      ]
+    },
+    {
+      "Hostname": "Jump-Host-01",
+      "IP": "10.10.190.20",
+      "Type": "Jump-Host",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "RDP",
+          "target": "DC-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "SSH",
+          "target": "Core-Switch-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "HTTPS-Admin",
+          "target": "Edge-Firewall-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Monitoring-Server-01",
+      "IP": "10.10.160.10",
+      "Type": "Monitoring",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "SNMP",
+          "target": "Core-Switch-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "SNMP",
+          "target": "Edge-Firewall-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "SNMP",
+          "target": "SAN-Storage-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "HTTPS",
+          "target": "Grafana-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Grafana-01",
+      "IP": "10.10.160.20",
+      "Type": "Dashboard",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "HTTPS",
+          "target": "Monitoring-Server-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "LDAP",
+          "target": "DC-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "SIEM-01",
+      "IP": "10.10.120.10",
+      "Type": "SIEM",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "SYSLOG",
+          "target": "Edge-Firewall-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "SYSLOG",
+          "target": "WAF-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "SYSLOG",
+          "target": "Core-Switch-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "SYSLOG",
+          "target": "OT-Firewall-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "EDR-Management-01",
+      "IP": "10.10.120.20",
+      "Type": "Security-Management",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "HTTPS",
+          "target": "Client-PC-001",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "HTTPS",
+          "target": "App-Server-ERP-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "WLAN-Controller-01",
+      "IP": "10.10.10.60",
+      "Type": "WLAN-Controller",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "CAPWAP",
+          "target": "AP-Floor1-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "CAPWAP",
+          "target": "AP-Floor1-02",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "CAPWAP",
+          "target": "AP-Floor2-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "CAPWAP",
+          "target": "AP-Floor2-02",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "RADIUS",
+          "target": "RADIUS-MFA-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "AP-Floor1-01",
+      "IP": "10.10.80.11",
+      "Type": "Access-Point",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "CAPWAP",
+          "target": "WLAN-Controller-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "Trunk",
+          "target": "Access-Switch-Floor1-01",
+          "targetType": "hostname",
+          "Notes": "SSID Corp VLAN 80, Guest VLAN 90"
+        }
+      ]
+    },
+    {
+      "Hostname": "AP-Floor1-02",
+      "IP": "10.10.80.12",
+      "Type": "Access-Point",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "CAPWAP",
+          "target": "WLAN-Controller-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "AP-Floor2-01",
+      "IP": "10.10.80.13",
+      "Type": "Access-Point",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "CAPWAP",
+          "target": "WLAN-Controller-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "AP-Floor2-02",
+      "IP": "10.10.80.14",
+      "Type": "Access-Point",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "CAPWAP",
+          "target": "WLAN-Controller-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Client-PC-001",
+      "IP": "10.10.60.101",
+      "Type": "Client",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "HTTP-Proxy",
+          "target": "Forward-Proxy-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "SMB",
+          "target": "File-Server-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "DNS",
+          "target": "DC-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Client-PC-002",
+      "IP": "10.10.60.102",
+      "Type": "Client",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "HTTP-Proxy",
+          "target": "Forward-Proxy-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "SMB",
+          "target": "File-Server-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Client-PC-101",
+      "IP": "10.10.60.201",
+      "Type": "Client",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "HTTP-Proxy",
+          "target": "Forward-Proxy-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "HTTPS",
+          "target": "App-Server-CRM-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Printer-Floor1-01",
+      "IP": "10.10.70.10",
+      "Type": "Printer",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "SMB",
+          "target": "Print-Server-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Printer-Floor2-01",
+      "IP": "10.10.70.11",
+      "Type": "Printer",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "SMB",
+          "target": "Print-Server-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Print-Server-01",
+      "IP": "10.10.20.70",
+      "Type": "Printserver",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "LDAP",
+          "target": "DC-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "SMB",
+          "target": "Printer-Floor1-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "SMB",
+          "target": "Printer-Floor2-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "IoT-Gateway-01",
+      "IP": "10.10.100.10",
+      "Type": "IoT-Gateway",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "MQTT",
+          "target": "MQTT-Broker-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "Firewall-Rule",
+          "target": "Edge-Firewall-01",
+          "targetType": "hostname",
+          "Notes": "IoT darf nur MQTT zum Broker und DNS/NTP"
+        }
+      ]
+    },
+    {
+      "Hostname": "MQTT-Broker-01",
+      "IP": "10.10.100.20",
+      "Type": "MQTT-Broker",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "MQTT",
+          "target": "IoT-Gateway-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "HTTPS",
+          "target": "Monitoring-Server-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "OT-Firewall-01",
+      "IP": "10.10.110.1",
+      "Type": "Industrial-Firewall",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "Firewall-Rule",
+          "target": "Edge-Firewall-01",
+          "targetType": "hostname",
+          "Notes": "OT Zone abgeschottet, nur definierte Verbindungen erlaubt"
+        },
+        {
+          "connType": "Trunk",
+          "target": "Industrial-Switch-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "SYSLOG",
+          "target": "SIEM-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Industrial-Switch-01",
+      "IP": "10.10.110.10",
+      "Type": "Industrial-Switch",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "Kabel",
+          "target": "PLC-Line1-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "Kabel",
+          "target": "HMI-Line1-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "Kabel",
+          "target": "SCADA-Server-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "PLC-Line1-01",
+      "IP": "10.10.110.50",
+      "Type": "PLC",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "OPC-UA",
+          "target": "SCADA-Server-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "Modbus-TCP",
+          "target": "HMI-Line1-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "HMI-Line1-01",
+      "IP": "10.10.110.60",
+      "Type": "HMI",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "Modbus-TCP",
+          "target": "PLC-Line1-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "SCADA-Server-01",
+      "IP": "10.10.110.70",
+      "Type": "SCADA",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "OPC-UA",
+          "target": "PLC-Line1-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "Backup-Agent",
+          "target": "Backup-Server-02",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "SYSLOG",
+          "target": "SIEM-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Dev-GitLab-01",
+      "IP": "10.10.130.10",
+      "Type": "DevOps",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "HTTPS",
+          "target": "Dev-Runner-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "LDAP",
+          "target": "DC-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Dev-Runner-01",
+      "IP": "10.10.130.20",
+      "Type": "CI-CD-Runner",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "HTTPS",
+          "target": "Dev-GitLab-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "HTTP-Proxy",
+          "target": "Forward-Proxy-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "VDI-Broker-01",
+      "IP": "10.10.150.10",
+      "Type": "VDI",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "RDP",
+          "target": "VDI-Desktop-Pool-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "LDAP",
+          "target": "DC-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "VDI-Desktop-Pool-01",
+      "IP": "10.10.150.20",
+      "Type": "VDI-Pool",
+      "Kind": "VM",
+      "Connections": [
+        {
+          "connType": "RDP",
+          "target": "VDI-Broker-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "SMB",
+          "target": "File-Server-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Branch-Firewall-01",
+      "IP": "10.0.0.50",
+      "Type": "Branch-Firewall",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "IPsec-VPN",
+          "target": "Edge-Firewall-01",
+          "targetType": "hostname",
+          "Notes": "Site-to-Site VPN Hauptstandort"
+        },
+        {
+          "connType": "Static-Routing",
+          "target": "Branch-Switch-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Branch-Switch-01",
+      "IP": "10.10.10.250",
+      "Type": "Branch-Switch",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "Kabel",
+          "target": "Branch-Client-01",
+          "targetType": "hostname"
+        }
+      ]
+    },
+    {
+      "Hostname": "Branch-Client-01",
+      "IP": "10.10.60.250",
+      "Type": "Client",
+      "Kind": "Physisch",
+      "Connections": [
+        {
+          "connType": "HTTPS",
+          "target": "App-Server-ERP-01",
+          "targetType": "hostname"
+        },
+        {
+          "connType": "DNS",
+          "target": "DC-01",
+          "targetType": "hostname"
+        }
+      ]
+    }
+  ]
+}

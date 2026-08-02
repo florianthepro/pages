@@ -70,7 +70,7 @@ function liarc_pretty_route(): ?array {
     $map = [
         'login' => ['auth', ['v' => 'login']], 'register' => ['auth', ['v' => 'register']],
         'install' => ['auth', ['v' => 'install']], 'logout' => ['auth', ['v' => 'logout']],
-        'auth' => ['auth', []], 'devices' => ['devices', []], 'settings' => ['settings', []],
+        'auth' => ['auth', []], 'devices' => ['settings', []], 'settings' => ['settings', []],
         'data' => ['data', []], 'assets' => ['assets', []], 'api' => ['api', []],
     ];
     if (isset($map[$seg[0]])) {
@@ -93,6 +93,10 @@ function liarc_id(int $bytes = 9): string { return liarc_b64e(random_bytes($byte
 function liarc_now(): int { return time(); }
 function liarc_cut(string $s, int $n): string { return function_exists('mb_substr') ? mb_substr($s, 0, $n) : substr($s, 0, $n); }
 function liarc_client_ip(): string { return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0'; }
+
+function liarc_is_mobile(): bool {
+    return (bool)preg_match('/Android|iPhone|iPad|iPod/i', $_SERVER['HTTP_USER_AGENT'] ?? '');
+}
 
 function liarc_is_https(): bool {
     return (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
@@ -257,8 +261,11 @@ function liarc_next_lang(): string {
 
 // ---- http / ui -----------------------------------------------------------
 
+// immer absolut auf das index.php-Verzeichnis, sonst haengen relative
+// ?_page=-Links an huebschen Pfaden wie /login (Redirect-Schleife)
 function liarc_url(string $page = 'index', array $params = []): string {
-    return '?'.http_build_query(['_page' => $page] + $params);
+    $base = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
+    return $base.'/?'.http_build_query(['_page' => $page] + $params);
 }
 
 function liarc_redirect(string $page = 'index', array $params = []): never {
@@ -294,6 +301,8 @@ function liarc_input(): array {
 }
 
 function liarc_set_page(string $p): void { $GLOBALS['liarc_page'] = $p; }
+// sichtbarer wunsch-pfad fuer die adresszeile (app.js ersetzt die URL damit)
+function liarc_set_clean(string $p): void { $GLOBALS['liarc_clean'] = $p; }
 
 // Icon aus dem inline eingebetteten Sprite (ein Request statt vieler Einzeldateien)
 function ic(string $name, string $title = ''): string {
@@ -320,33 +329,40 @@ function liarc_head(string $title, bool $bare = false, ?string $activeCat = null
     echo '<link rel="manifest" href="'.h(liarc_url('assets', ['f' => 'manifest'])).'">';
     echo '<link rel="stylesheet" href="'.h(liarc_url('assets', ['f' => 'css'])).'">';
     $base = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
-    echo '</head><body data-authed="'.($authed ? '1' : '0').'" data-csrf="'.($authed ? h(liarc_csrf_token()) : '').'" data-page="'.h((string)($GLOBALS['liarc_page'] ?? $_GET['_page'] ?? 'index')).'" data-base="'.h($base).'">';
+    $clean = isset($GLOBALS['liarc_clean']) ? $base.$GLOBALS['liarc_clean'] : '';
+    echo '</head><body data-authed="'.($authed ? '1' : '0').'" data-csrf="'.($authed ? h(liarc_csrf_token()) : '').'" data-page="'.h((string)($GLOBALS['liarc_page'] ?? $_GET['_page'] ?? 'index')).'" data-base="'.h($base).'" data-clean="'.h($clean).'">';
     echo liarc_sprite();
     if (!$bare) {
         $curPage = (string)($GLOBALS['liarc_page'] ?? 'index');
-        // Desktop: Seitenleiste wie bei Desktop-Apps
-        echo '<aside class="side"><a class="brand" href="'.h(liarc_url()).'">'.ic('liarc').'<span>'.h(liarc_cfg('title')).'</span></a><nav class="sidenav">';
-        foreach (liarc_groups() as $g => $gd) {
-            echo '<div class="sg">'.h(t('g.'.$g)).'</div>';
-            foreach ($gd['cats'] as $ck) {
-                $c = liarc_category($ck);
-                if ($c === null) continue;
-                echo '<a class="sc'.($ck === $activeCat ? ' active' : '').'" href="'.h(liarc_url('index', ['cat' => $ck])).'">'.ic($c['icon']).'<span>'.h(liarc_cat_name($c)).'</span></a>';
+        if (liarc_is_mobile()) {
+            // App-GUI: schlanke Kopfzeile, feste Tab-Leiste unten
+            echo '<header class="topbar mob"><a class="brand" href="'.h(liarc_url()).'">'.ic('liarc').'<span>'.h(liarc_cfg('title')).'</span></a></header>';
+            echo '<nav class="tabbar">';
+            echo '<a href="'.h(liarc_url()).'" class="'.($curPage === 'index' ? 'active' : '').'">'.ic('home', t('nav.home')).'<span>'.h(t('nav.home')).'</span></a>';
+            echo '<a href="'.h(liarc_url('settings')).'" class="'.($curPage === 'settings' ? 'active' : '').'">'.ic('gear', t('nav.settings')).'<span>'.h(t('nav.settings')).'</span></a>';
+            echo '</nav>';
+        } else {
+            // Web-GUI: Seitenleiste ist die Navigation
+            echo '<aside class="side"><a class="brand" href="'.h(liarc_url()).'">'.ic('liarc').'<span>'.h(liarc_cfg('title')).'</span></a><nav class="sidenav">';
+            foreach (liarc_groups() as $g => $gd) {
+                echo '<div class="sg">'.h(t('g.'.$g)).'</div>';
+                foreach ($gd['cats'] as $ck) {
+                    $c = liarc_category($ck);
+                    if ($c === null) continue;
+                    echo '<a class="sc'.($ck === $activeCat ? ' active' : '').'" href="'.h(liarc_url('index', ['cat' => $ck])).'">'.ic($c['icon']).'<span>'.h(liarc_cat_name($c)).'</span></a>';
+                }
             }
+            echo '</nav><div class="sidefoot">';
+            echo '<a href="'.h(liarc_url('settings')).'" class="'.($curPage === 'settings' ? 'active' : '').'">'.ic('gear', t('nav.settings')).'</a>';
+            echo '<a href="'.h(liarc_url($curPage, ['lang' => liarc_next_lang()])).'">'.ic('globe', strtoupper(liarc_next_lang())).'</a>';
+            echo '<form method="post" action="'.h(liarc_url('auth', ['v' => 'logout'])).'" class="inline"><input type="hidden" name="csrf" value="'.h(liarc_csrf_token()).'"><button type="submit" class="iconbtn">'.ic('logout', t('nav.logout')).'</button></form>';
+            echo '</div></aside>';
+            echo '<header class="topbar"><a class="brand" href="'.h(liarc_url()).'">'.ic('liarc').'<span>'.h(liarc_cfg('title')).'</span></a><nav class="nav">';
+            echo '<a href="'.h(liarc_url('settings')).'">'.ic('gear', t('nav.settings')).'</a>';
+            echo '<a href="'.h(liarc_url($curPage, ['lang' => liarc_next_lang()])).'">'.ic('globe', strtoupper(liarc_next_lang())).'</a>';
+            echo '<form method="post" action="'.h(liarc_url('auth', ['v' => 'logout'])).'" class="inline"><input type="hidden" name="csrf" value="'.h(liarc_csrf_token()).'"><button type="submit" class="iconbtn">'.ic('logout', t('nav.logout')).'</button></form>';
+            echo '</nav></header>';
         }
-        echo '</nav><div class="sidefoot">';
-        echo '<a href="'.h(liarc_url('devices')).'" class="'.($curPage === 'devices' ? 'active' : '').'">'.ic('devices', t('nav.devices')).'</a>';
-        echo '<a href="'.h(liarc_url('settings')).'" class="'.($curPage === 'settings' ? 'active' : '').'">'.ic('gear', t('nav.settings')).'</a>';
-        echo '<a href="'.h(liarc_url($curPage, ['lang' => liarc_next_lang()])).'">'.ic('globe', strtoupper(liarc_next_lang())).'</a>';
-        echo '<form method="post" action="'.h(liarc_url('auth', ['v' => 'logout'])).'" class="inline"><input type="hidden" name="csrf" value="'.h(liarc_csrf_token()).'"><button type="submit" class="iconbtn">'.ic('logout', t('nav.logout')).'</button></form>';
-        echo '</div></aside>';
-        // Handy: Topbar
-        echo '<header class="topbar"><a class="brand" href="'.h(liarc_url()).'">'.ic('liarc').'<span>'.h(liarc_cfg('title')).'</span></a><nav class="nav">';
-        echo '<a href="'.h(liarc_url('devices')).'">'.ic('devices', t('nav.devices')).'</a>';
-        echo '<a href="'.h(liarc_url('settings')).'">'.ic('gear', t('nav.settings')).'</a>';
-        echo '<a href="'.h(liarc_url($curPage, ['lang' => liarc_next_lang()])).'">'.ic('globe', strtoupper(liarc_next_lang())).'</a>';
-        echo '<form method="post" action="'.h(liarc_url('auth', ['v' => 'logout'])).'" class="inline"><input type="hidden" name="csrf" value="'.h(liarc_csrf_token()).'"><button type="submit" class="iconbtn">'.ic('logout', t('nav.logout')).'</button></form>';
-        echo '</nav></header>';
     }
     echo '<main class="main'.($bare ? ' centered' : '').'">';
 }
@@ -476,6 +492,24 @@ function liarc_change_password(string $uid, string $dek, string $old, string $ne
     return null;
 }
 
+// das einzige echte loeschen im system: der eigene account
+function liarc_rmdir(string $dir): void {
+    foreach (glob($dir.'/*') ?: [] as $f) {
+        is_dir($f) ? liarc_rmdir($f) : @unlink($f);
+    }
+    foreach (glob($dir.'/.*') ?: [] as $f) {
+        if (basename($f) !== '.' && basename($f) !== '..' && is_file($f)) @unlink($f);
+    }
+    @rmdir($dir);
+}
+
+function liarc_account_delete(string $uid, string $password): bool {
+    $auth = liarc_read_json(liarc_user_dir($uid).'/auth.json');
+    if ($auth === null || !password_verify($password, $auth['pw_hash'] ?? '')) return false;
+    liarc_rmdir(liarc_user_dir($uid));
+    return true;
+}
+
 function liarc_username(string $uid): string {
     return liarc_read_json(liarc_user_dir($uid).'/auth.json')['username'] ?? '';
 }
@@ -564,7 +598,7 @@ function liarc_api_auth(): ?array {
 
 function liarc_groups(): array {
     return [
-        'contacts' => ['icon' => 'users', 'cats' => ['contacts', 'phones']],
+        'contacts' => ['icon' => 'users', 'cats' => ['contacts']],
         'health' => ['icon' => 'heart', 'cats' => ['heart', 'weight', 'height', 'steps', 'sleep', 'temp', 'medical']],
         'security' => ['icon' => 'shield', 'cats' => ['passwords', 'certs', 'serials']],
         'misc' => ['icon' => 'folder', 'cats' => ['documents', 'notes']],
@@ -576,8 +610,6 @@ function liarc_categories(): array {
     return [
         'contacts' => ['icon' => 'user', 'kind' => 'records', 'unit' => '', 'me' => true,
             'fields' => [$f('name', 'text'), $f('relation', 'text'), $f('birthdate', 'date'), $f('number', 'phone'), $f('blood', 'text'), $f('note', 'note')]],
-        'phones' => ['icon' => 'phone', 'kind' => 'records', 'unit' => '',
-            'fields' => [$f('label', 'text'), $f('number', 'phone')]],
         'heart' => ['icon' => 'heart', 'kind' => 'series', 'unit' => 'bpm', 'fields' => []],
         'weight' => ['icon' => 'scale', 'kind' => 'series', 'unit' => 'kg', 'fields' => []],
         'height' => ['icon' => 'ruler', 'kind' => 'series', 'unit' => 'cm', 'fields' => []],
@@ -663,6 +695,7 @@ function liarc_entry_build(array $cat, array $in): array {
 
 function liarc_category_stats(array $cat, array $entries): array {
     if ($cat['kind'] === 'series') {
+        $entries = array_values(array_filter($entries, fn($e) => ($e['status'] ?? 'active') === 'active'));
         $values = array_map(fn($e) => (float)$e['value'], $entries);
         if (count($values) === 0) return ['count' => 0, 'min' => null, 'max' => null, 'avg' => null, 'latest' => null];
         $sorted = $entries;
@@ -677,6 +710,7 @@ function liarc_category_stats(array $cat, array $entries): array {
 }
 
 function liarc_series_points(array $entries): array {
+    $entries = array_values(array_filter($entries, fn($e) => ($e['status'] ?? 'active') === 'active'));
     $points = array_map(fn($e) => ['at' => $e['at'], 'value' => (float)$e['value']], $entries);
     usort($points, fn($a, $b) => $a['at'] <=> $b['at']);
     return $points;
