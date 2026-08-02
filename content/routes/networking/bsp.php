@@ -130,6 +130,14 @@ $demo=[
 ['Hostname'=>'cloud-crm','IP'=>'203.0.113.50','Type'=>'Cloud-Dienst','Kind'=>'Extern','Connections'=>[]]
 ]
 ];
+#bevorzugt die grosse bsp.json aus dem repo, eingebautes demo als fallback
+$bspUrl='https://raw.githubusercontent.com/florianthepro/pages/main/content/media/networking/bsp.json';
+$ctx=stream_context_create(['http'=>['timeout'=>10]]);
+$remote=@file_get_contents($bspUrl,false,$ctx);
+if($remote!==false){
+$tmp=json_decode($remote,true);
+if(is_array($tmp)&&isset($tmp['devices'])&&is_array($tmp['devices'])&&count($tmp['devices'])>0)$demo=$tmp;
+}
 header('Content-Type: text/html; charset=utf-8');
 ?>
 <!doctype html>
