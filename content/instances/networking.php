@@ -16,7 +16,6 @@ $yaml=<<<'YAML'
 license: "https://raw.githubusercontent.com/florianthepro/pages/main/LICENSE"
 blocked: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/blocked.html"
 index: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/networking/index.php"
-bsp: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/networking/bsp.php"
 raw: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/networking/raw.php"
 YAML;
 ///////////////////////
