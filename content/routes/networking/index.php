@@ -158,6 +158,7 @@ if(hash_equals(nw_totp_code($secret,$slice+$i),$code))return true;
 }
 return false;
 }
+function nw_json_for_script($data){return json_encode($data,JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE);}
 function nw_totp_path($jsondir){return dirname($jsondir).DIRECTORY_SEPARATOR.'totp.secret.php';}
 function nw_totp_load($path){
 if(!is_readable($path))return null;
@@ -200,28 +201,74 @@ session_start();
 if(empty($_SESSION['networking_csrf']))$_SESSION['networking_csrf']=bin2hex(random_bytes(16));
 $csrfToken=$_SESSION['networking_csrf'];
 $totpPath=nw_totp_path($networking_jsondir);
+$mfaMarkerPath=dirname($networking_jsondir).DIRECTORY_SEPARATOR.'remove_if_mfa_lost.txt';
+$mfaSetupCodePath=dirname($networking_jsondir).DIRECTORY_SEPARATOR.'mfa-setup-code.php';
+$mfaMarkerText="NICHT loeschen. Wird diese Datei geloescht, erzwingt die Seite ein neues MFA-Setup (Reset-Code steht dann in mfa-setup-code.php).\n";
 $totp=nw_totp_load($totpPath);
 if($totp===null){
 $totp=['secret'=>nw_b32_encode(random_bytes(20)),'confirmed'=>false];
 nw_totp_store($totpPath,$totp);
 }
+$setupMode='none';
+if(empty($totp['confirmed']))$setupMode='first';
+elseif(!is_file($mfaMarkerPath)){
+if(empty($totp['pending'])||empty($totp['setup_code'])){
+$totp['pending']=nw_b32_encode(random_bytes(20));
+$totp['setup_code']=str_pad((string)random_int(0,99999999),8,'0',STR_PAD_LEFT);
+nw_totp_store($totpPath,$totp);
+@file_put_contents($mfaSetupCodePath,"<?php exit; ?>\nMFA-Reset-Code fuer das Setup: ".$totp['setup_code']."\n",LOCK_EX);
+}
+$setupMode='reset';
+}
 $save_msg='';
 $save_err='';
+$setup_err='';
 $pendingConfig=null;
+if($_SERVER['REQUEST_METHOD']==='POST'&&($_POST['action']??'')==='totp_confirm'){
+$token=$_POST['csrf']??'';
+if(!hash_equals($csrfToken,(string)$token))$setup_err='Ungültiges Sicherheits-Token.';
+elseif($setupMode==='first'){
+if(nw_totp_verify((string)$totp['secret'],(string)($_POST['totp']??''))){
+$totp['confirmed']=true;
+nw_totp_store($totpPath,$totp);
+@file_put_contents($mfaMarkerPath,$mfaMarkerText,LOCK_EX);
+$setupMode='none';
+$save_msg='MFA eingerichtet.';
+}else $setup_err='Code ungültig.';
+}
+elseif($setupMode==='reset'){
+$sc=preg_replace('/\s+/','',(string)($_POST['setup_code']??''));
+if(!hash_equals((string)$totp['setup_code'],$sc))$setup_err='Reset-Code falsch (siehe mfa-setup-code.php auf dem Server).';
+elseif(nw_totp_verify((string)$totp['pending'],(string)($_POST['totp']??''))){
+$totp['secret']=$totp['pending'];
+$totp['confirmed']=true;
+unset($totp['pending'],$totp['setup_code']);
+nw_totp_store($totpPath,$totp);
+@unlink($mfaSetupCodePath);
+@file_put_contents($mfaMarkerPath,$mfaMarkerText,LOCK_EX);
+$setupMode='none';
+$save_msg='MFA neu eingerichtet.';
+}else $setup_err='Code ungültig.';
+}
+}
 if($_SERVER['REQUEST_METHOD']==='POST'&&($_POST['action']??'')==='save'){
 $token=$_POST['csrf']??'';
 $decoded=json_decode((string)($_POST['config_json']??''),true);
-if(!hash_equals($csrfToken,(string)$token))$save_err='Ungültiges Sicherheits-Token.';
+if(!hash_equals($csrfToken,(string)$token)){$save_err='Sitzung abgelaufen – nicht gespeichert (Änderungen noch da, erneut speichern).';if(is_array($decoded))$pendingConfig=$decoded;}
+elseif($setupMode!=='none')$save_err='Zuerst MFA-Setup abschließen.';
 elseif(!nw_totp_verify((string)$totp['secret'],(string)($_POST['totp']??''))){
-$save_err='TOTP-Code ungültig – NICHT gespeichert. Änderungen sind noch da, Code prüfen und erneut speichern.';
+$save_err='TOTP-Code ungültig – nicht gespeichert (Änderungen noch da).';
 if(is_array($decoded))$pendingConfig=$decoded;
 }
-elseif(!is_array($decoded))$save_err='Übergebene Konfiguration ist kein gültiges JSON-Objekt.';
+elseif(!is_array($decoded))$save_err='Konfiguration ist kein gültiges JSON.';
 else{
-if(save_config($networking_jsondir,$decoded)){
-$save_msg='Gespeichert.';
-if(empty($totp['confirmed'])){$totp['confirmed']=true;nw_totp_store($totpPath,$totp);}
-}else{$save_err='Fehler beim Speichern: '.$networking_jsondir;if(is_array($decoded))$pendingConfig=$decoded;}
+$curHash=is_readable($networking_jsondir)?sha1((string)@file_get_contents($networking_jsondir)):'new';
+if(!hash_equals($curHash,(string)($_POST['config_hash']??''))){
+$save_err='config.json wurde zwischenzeitlich geändert – nicht gespeichert (Änderungen noch da).';
+$pendingConfig=$decoded;
+}
+elseif(save_config($networking_jsondir,$decoded))$save_msg='Gespeichert.';
+else{$save_err='Fehler beim Speichern: '.$networking_jsondir;$pendingConfig=$decoded;}
 }
 }
 $config=load_config($networking_jsondir);
@@ -231,12 +278,13 @@ $config=normalizeConfig($pendingConfig);
 applyDevicesDerivedDefaults($config);
 $clientDirty=true;
 }
-$totpConfirmed=!empty($totp['confirmed']);
+$cfgFileHash=is_readable($networking_jsondir)?sha1((string)@file_get_contents($networking_jsondir)):'new';
 $totpSetup=null;
-if(!$totpConfirmed){
+if($setupMode!=='none'){
 $host=(string)($_SERVER['HTTP_HOST']??'server');
+$sec=$setupMode==='reset'?(string)$totp['pending']:(string)$totp['secret'];
 $label=rawurlencode($networking_title.':'.$host);
-$totpSetup=['secret'=>(string)$totp['secret'],'uri'=>'otpauth://totp/'.$label.'?secret='.rawurlencode((string)$totp['secret']).'&issuer='.rawurlencode($networking_title)];
+$totpSetup=['secret'=>$sec,'uri'=>'otpauth://totp/'.$label.'?secret='.rawurlencode($sec).'&issuer='.rawurlencode($networking_title),'mode'=>$setupMode];
 }
 $configError=null;
 if(!is_readable($networking_jsondir))$configError='Keine config.json gefunden – Standard geladen. Mit „+ Gerät" starten und speichern.';
@@ -266,10 +314,10 @@ button{font-family:inherit}
 .btnDanger{border-radius:6px;border:1px solid #dc2626;background:#fff;color:#dc2626;font-size:13px;padding:6px 12px;cursor:pointer;white-space:nowrap}
 .btnDanger:hover{background:#fee2e2}
 .btnSmall{font-size:11px;padding:4px 8px}
-.notice{position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:40;font-size:13px;padding:8px 14px;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+.notice{position:fixed;top:96px;left:50%;transform:translateX(-50%);z-index:40;font-size:13px;padding:8px 14px;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15)}
 .notice.ok{background:#dcfce7;border:1px solid #16a34a;color:#14532d}
 .notice.err{background:#fee2e2;border:1px solid #dc2626;color:#7f1d1d}
-#connectBanner{position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:40;display:none;align-items:center;gap:10px;font-size:13px;font-weight:bold;color:#7c2d12;background:#ffedd5;border:1px solid #ea580c;padding:8px 14px;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+#connectBanner{position:fixed;top:96px;left:50%;transform:translateX(-50%);z-index:40;display:none;align-items:center;gap:10px;font-size:13px;font-weight:bold;color:#7c2d12;background:#ffedd5;border:1px solid #ea580c;padding:8px 14px;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15)}
 .modalBackdrop{position:fixed;inset:0;background:rgba(17,24,39,.55);display:none;align-items:center;justify-content:center;z-index:1000;padding:12px;box-sizing:border-box}
 .modalPanel{background:#fff;border-radius:10px;border:1px solid #d1d5db;box-shadow:0 12px 40px rgba(0,0,0,.25);max-width:640px;width:100%;max-height:92vh;display:flex;flex-direction:column}
 .modalHeader{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid #e5e7eb}
@@ -283,7 +331,13 @@ input[type="text"],input[type="number"],textarea,select{width:100%;box-sizing:bo
 input[type="text"]:focus,input[type="number"]:focus,textarea:focus,select:focus{border-color:#0070ff;outline:none;box-shadow:0 0 0 2px rgba(0,112,255,.15)}
 textarea{min-height:64px;resize:vertical}
 .typeRow{display:flex;gap:8px;align-items:center}
-.typeRow select{flex:1}
+.typeRow .combo{flex:1}
+.combo{position:relative}
+.comboList{position:absolute;left:0;right:0;top:100%;margin-top:2px;z-index:60;background:#fff;border:1px solid #c6cbd3;border-radius:6px;max-height:210px;overflow:auto;box-shadow:0 8px 20px rgba(0,0,0,.15);display:none}
+.comboItem{display:flex;gap:8px;align-items:center;padding:6px 9px;font-size:13px;cursor:pointer;color:#111827}
+.comboItem:hover,.comboItem.active{background:#eef1f5}
+.comboItem img{width:18px;height:18px;border-radius:4px;flex:0 0 auto}
+.comboItem .comboSub{color:#6b7280;font-size:11px;margin-left:auto}
 #devTypeIcon{width:30px;height:30px;border-radius:6px;border:1px solid #e5e7eb;background:#f9fafb;flex:0 0 auto}
 #connModalInfo{font-size:13px;color:#374151;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:8px 10px;margin-bottom:10px}
 #overlayActions{display:flex;gap:6px;margin:6px 0}
@@ -305,10 +359,23 @@ textarea{min-height:64px;resize:vertical}
 #totpQr{image-rendering:pixelated}
 .totpSecret{text-align:center;font-family:monospace;font-size:15px;font-weight:bold;letter-spacing:2px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:8px;margin:8px 0;word-break:break-all}
 .totpStep{font-size:13px;color:#374151;margin:6px 0}
-.totpUri{font-size:11px;color:#6b7280;word-break:break-all;margin-top:8px}
-.totpUri a{color:#0070ff}
+.totpCodeInput{text-align:center;font-size:16px;letter-spacing:3px;margin:4px 0}
+.totpFootHint{font-size:11px;color:#6b7280;align-self:center;max-width:60%}
+.msgInline{background:#fee2e2;border:1px solid #dc2626;color:#7f1d1d;font-size:12px;padding:6px 8px;border-radius:6px;margin-bottom:8px}
 .jsonHint{font-size:12px;color:#6b7280;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:7px 9px}
 .cableLabel{font-size:8.5px;fill:#334155;font-weight:bold;paint-order:stroke;stroke:#f6f8fb;stroke-width:3px;stroke-linejoin:round}
+.viewSelect{width:auto;border-radius:6px;border:1px solid #c6cbd3;font-size:12px;padding:4px 6px;background:#fff}
+.layerSep{width:1px;height:18px;background:#d1d5db}
+#layerBarTitle2{color:#6b7280;font-weight:bold}
+#quickText{min-height:110px;font-family:monospace;font-size:12px}
+#quickPreview{margin-top:8px;max-height:180px;overflow:auto;font-size:12px}
+.quickRow{display:flex;gap:8px;align-items:center;padding:4px 6px;border-bottom:1px solid #f3f4f6}
+.quickRow img{width:18px;height:18px;border-radius:4px}
+.quickRow .qh{font-weight:bold;min-width:120px}
+.quickRow .qi{color:#4b5563;min-width:100px}
+.quickRow .qt{color:#0070ff}
+.quickRow.qskip{opacity:.5}
+.quickRow .qs{color:#b45309;font-size:11px;margin-left:auto}
 #topBarTitle{font-size:15px;font-weight:bold;white-space:nowrap}
 #searchWrapper{position:relative;flex:1;max-width:520px}
 #searchInput{width:100%;box-sizing:border-box;border-radius:999px;border:1px solid #c6cbd3;background:#f9fafb;color:#111827;font-size:13px;padding:6px 28px 6px 28px;outline:none}
@@ -368,17 +435,25 @@ textarea{min-height:64px;resize:vertical}
 </div>
 <div id="searchMeta"><span id="searchCountDevices">0</span> Geräte · <span id="searchCountConns">0</span> Verbindungen</div>
 <button type="button" class="btnGhost" id="btnAddDevice">+ Gerät</button>
-<input type="text" id="totpInput" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="TOTP" title="6-stelliger Code aus der Authenticator-App">
-<button type="button" class="btnPrimary" id="btnSave">Speichern</button>
+<button type="button" class="btnGhost" id="btnQuickAdd" title="Zeilen mit Hostname/IP einfügen – Typ und Subnetz werden automatisch erkannt">⚡ Einfügen</button>
+<input type="text" id="totpInput" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="TOTP" title="Code aus der Authenticator-App"<?php if($totpSetup!==null)echo' disabled';?>>
+<button type="button" class="btnPrimary" id="btnSave"<?php if($totpSetup!==null)echo' disabled';?>>Speichern</button>
 <div id="topLinks">
-<?php if(!$totpConfirmed):?><a href="#" id="mfaLink">MFA einrichten</a><?php endif;?>
+<a href="?_page=bsp">Beispiel</a>
 <a href="?_page=raw" target="_blank" rel="noopener noreferrer">config.json</a>
 <a href="?_page=license" target="_blank" rel="noopener noreferrer">LICENSE</a>
 </div>
 </div>
 <div id="layerBar">
-<span id="layerBarTitle">Ebenen:</span>
-<label class="layerToggle"><input type="checkbox" id="lyVlan" checked> VLAN-Boxen</label>
+<span id="layerBarTitle">Ansicht:</span>
+<select id="viewModeSel" class="viewSelect">
+<option value="vlan">Subnetz / VLAN</option>
+<option value="category">Kategorie (Endgeräte …)</option>
+<option value="kind">Art (Physisch / VM / Extern)</option>
+</select>
+<span class="layerSep"></span>
+<span id="layerBarTitle2">Ebenen:</span>
+<label class="layerToggle"><input type="checkbox" id="lyVlan" checked> Gruppen-Boxen</label>
 <label class="layerToggle layerPhys"><input type="checkbox" id="lyCable" checked> Physisch (Kabel)</label>
 <label class="layerToggle"><input type="checkbox" id="lySvc" checked> Dienste</label>
 <label class="layerToggle"><input type="checkbox" id="lyBlocked" checked> Blockierte</label>
@@ -395,32 +470,43 @@ textarea{min-height:64px;resize:vertical}
 <?php if($configError):?><div class="error"><?php echo h($configError);?></div><?php endif;?>
 <?php if($save_msg!==''):?><div class="notice ok" id="saveNotice"><?php echo h($save_msg);?></div><?php endif;?>
 <?php if($save_err!==''):?><div class="notice err" id="saveNotice"><?php echo h($save_err);?></div><?php endif;?>
-<div id="connectBanner">Verbindungsmodus: Ziel-Gerät anklicken <button type="button" class="btnGhost" id="btnConnectCancel">Abbrechen (ESC)</button></div>
+<div id="connectBanner">Ziel anklicken <button type="button" class="btnGhost" id="btnConnectCancel">Abbrechen</button></div>
 <form id="saveForm" method="post" autocomplete="off">
 <input type="hidden" name="action" value="save">
 <input type="hidden" name="csrf" value="<?php echo h($csrfToken);?>">
 <input type="hidden" name="totp" id="totpHidden">
+<input type="hidden" name="config_hash" value="<?php echo h($cfgFileHash);?>">
 <input type="hidden" name="config_json" id="config_json">
 </form>
 <div id="ctxMenu"></div>
 <?php if($totpSetup!==null):?>
-<div class="modalBackdrop" id="totpModal">
+<div class="modalBackdrop" id="totpModal" style="display:flex">
 <div class="modalPanel">
 <div class="modalHeader">
-<div class="modalTitle">MFA einrichten (TOTP)</div>
-<button type="button" class="btnGhost" id="btnTotpClose">Schließen</button>
+<div class="modalTitle"><?php echo $totpSetup['mode']==='reset'?'MFA neu einrichten':'MFA einrichten';?></div>
 </div>
+<form method="post" autocomplete="off">
 <div class="modalBody">
-<div class="totpStep">1. QR-Code mit einer Authenticator-App scannen (oder Secret manuell eintragen):</div>
+<?php if($setup_err!==''){echo'<div class="msgInline">'.h($setup_err).'</div>';}?>
+<div class="totpStep">1. QR-Code scannen (oder Secret manuell eintragen):</div>
 <div id="totpQrWrap"><canvas id="totpQr"></canvas></div>
 <div class="totpSecret"><?php echo h($totpSetup['secret']);?></div>
-<div class="totpStep">2. Beim ersten Speichern den 6-stelligen Code ins TOTP-Feld eingeben – damit ist die Einrichtung bestätigt. Danach braucht jedes Speichern einen frischen Code.</div>
-<div class="totpUri"><a href="<?php echo h($totpSetup['uri']);?>"><?php echo h($totpSetup['uri']);?></a></div>
+<?php if($totpSetup['mode']==='reset'):?>
+<div class="totpStep">2. Reset-Code aus der Server-Datei mfa-setup-code.php:</div>
+<input type="text" name="setup_code" class="totpCodeInput" maxlength="8" inputmode="numeric" placeholder="Reset-Code" required>
+<div class="totpStep">3. Code aus der App:</div>
+<?php else:?>
+<div class="totpStep">2. Code aus der App:</div>
+<?php endif;?>
+<input type="text" name="totp" class="totpCodeInput" maxlength="6" inputmode="numeric" autocomplete="one-time-code" placeholder="6-stelliger Code" required>
+<input type="hidden" name="action" value="totp_confirm">
+<input type="hidden" name="csrf" value="<?php echo h($csrfToken);?>">
 </div>
 <div class="modalFooter">
-<span></span>
-<button type="button" class="btnPrimary" id="btnTotpOk">Verstanden</button>
+<span class="totpFootHint">App verloren? remove_if_mfa_lost.txt auf dem Server löschen → neues Setup.</span>
+<button type="submit" class="btnPrimary">Weiter</button>
 </div>
+</form>
 </div>
 </div>
 <?php endif;?>
@@ -446,7 +532,10 @@ textarea{min-height:64px;resize:vertical}
 <label for="devType">Typ</label>
 <div class="typeRow">
 <img id="devTypeIcon" alt="" src="">
-<select id="devType"></select>
+<div class="combo">
+<input type="text" id="devType" autocomplete="off" placeholder="Typ suchen…">
+<div class="comboList" id="devTypeOpts"></div>
+</div>
 </div>
 </div>
 <div class="formCol">
@@ -479,7 +568,7 @@ textarea{min-height:64px;resize:vertical}
 </div>
 </div>
 </div>
-<div class="jsonHint">Notizen werden direkt in der config.json gepflegt und hier nur angezeigt.</div>
+<div class="jsonHint">Notizen: direkt in der config.json.</div>
 </div>
 <div class="modalFooter">
 <button type="button" class="btnDanger" id="btnDeviceDelete">Gerät löschen</button>
@@ -507,7 +596,10 @@ textarea{min-height:64px;resize:vertical}
 <div class="formRow" id="connServiceRow">
 <div class="formCol">
 <label for="connService">Dienst</label>
-<select id="connService"></select>
+<div class="combo">
+<input type="text" id="connService" autocomplete="off" placeholder="Dienst suchen…">
+<div class="comboList" id="connServiceOpts"></div>
+</div>
 </div>
 <div class="formCol">
 <label for="connPort">Port (optional)</label>
@@ -527,6 +619,27 @@ textarea{min-height:64px;resize:vertical}
 </div>
 </div>
 </div>
+<div class="modalBackdrop" id="quickModal">
+<div class="modalPanel">
+<div class="modalHeader">
+<div class="modalTitle">Schnell einfügen</div>
+<button type="button" class="btnGhost" id="btnQuickClose">Schließen</button>
+</div>
+<div class="modalBody">
+<div class="jsonHint">Eine Zeile pro Gerät: <b>Hostname IP [Typ]</b> – den Rest erkennt die Seite.</div>
+<div class="formRow" style="margin-top:10px">
+<div class="formCol">
+<textarea id="quickText" placeholder="fw01 10.0.1.1&#10;sw01 10.0.1.2&#10;esx01 10.0.2.5 vmware&#10;pc-buero1 10.0.3.21&#10;drucker-eg 10.0.3.40"></textarea>
+</div>
+</div>
+<div id="quickPreview"></div>
+</div>
+<div class="modalFooter">
+<button type="button" class="btnGhost" id="btnQuickCancel">Abbrechen</button>
+<button type="button" class="btnPrimary" id="btnQuickApply">Geräte hinzufügen</button>
+</div>
+</div>
+</div>
 <div id="detailOverlay">
 <div id="detailOverlayHeader">
 <div>
@@ -539,10 +652,29 @@ textarea{min-height:64px;resize:vertical}
 <div id="detailOverlayBody"></div>
 </div>
 <script>
-const appConfig=<?php echo json_encode($config,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);?>;
-const iconBase=<?php echo json_encode($networking_iconbase,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);?>;
+const appConfig=<?php echo nw_json_for_script($config);?>;
+const iconBase=<?php echo nw_json_for_script($networking_iconbase);?>;
 const initialDirty=<?php echo $clientDirty?'true':'false';?>;
-const totpSetup=<?php echo $totpSetup!==null?json_encode($totpSetup,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE):'null';?>;
+const totpSetup=<?php echo $totpSetup!==null?nw_json_for_script($totpSetup):'null';?>;
+let __demo=false;
+try{
+const dRaw=sessionStorage.getItem('networking_demo');
+if(dRaw!==null){
+sessionStorage.removeItem('networking_demo');
+const dc=JSON.parse(dRaw);
+if(dc&&typeof dc==='object'&&Array.isArray(dc.devices)){
+appConfig.devices=dc.devices;
+for(const k of['vlanGroups','typeIcons','typeStyles','connectionStyles']){
+if(dc[k]&&typeof dc[k]==='object')appConfig[k]=dc[k];
+}
+for(const k of['groupStyles','serviceLabels']){
+if(dc[k]&&typeof dc[k]==='object')appConfig[k]=Object.assign({},appConfig[k]||{},dc[k]);
+}
+__demo=true;
+}
+}
+}catch(e){}
+const demoActive=__demo;
 const deviceData=Array.isArray(appConfig.devices)?appConfig.devices:[];
 appConfig.devices=deviceData;
 </script>
@@ -569,6 +701,8 @@ let physAdj=[];
 let hostEdges=[];
 let groupBoxes=[];
 const layers={vlan:true,cable:true,svc:true,blocked:true,host:true};
+let viewMode='vlan';
+let selectedEdgeIndex=null;
 function tt(v){if(v===null||v===undefined)return'';return String(v);}
 function getVlanKey(ip){
 if(typeof ip!=='string')return'Unbekannt';
@@ -699,6 +833,33 @@ file=getDefaultTypeIcon(typ);
 if(/^https?:\/\//i.test(file))return file;
 return iconBase+file;
 }
+const categoryOrder=['Internet / Extern','Sicherheit','Netzwerk','Server & Dienste','Virtualisierung & Storage','Endgeräte','Sonstiges'];
+const categoryByIcon={
+'internet.svg':'Internet / Extern','cloud.svg':'Internet / Extern',
+'firewall.svg':'Sicherheit','vpn.svg':'Sicherheit','proxy.svg':'Sicherheit',
+'router.svg':'Netzwerk','switch.svg':'Netzwerk','wifi.svg':'Netzwerk','hotspot.svg':'Netzwerk','ups.svg':'Netzwerk',
+'server.svg':'Server & Dienste','windows.svg':'Server & Dienste','linux.svg':'Server & Dienste','ad.svg':'Server & Dienste','dns.svg':'Server & Dienste','dhcp.svg':'Server & Dienste','mail.svg':'Server & Dienste','web.svg':'Server & Dienste','database.svg':'Server & Dienste','monitoring.svg':'Server & Dienste','backup.svg':'Server & Dienste','rdp.svg':'Server & Dienste',
+'hypervisor.svg':'Virtualisierung & Storage','storage.svg':'Virtualisierung & Storage',
+'pc.svg':'Endgeräte','laptop.svg':'Endgeräte','smartphone.svg':'Endgeräte','tablet.svg':'Endgeräte','printer.svg':'Endgeräte','camera.svg':'Endgeräte','phone.svg':'Endgeräte','iot.svg':'Endgeräte',
+'device.svg':'Sonstiges'
+};
+const categoryColors={'Internet / Extern':'#075985','Sicherheit':'#b91c1c','Netzwerk':'#1c64d9','Server & Dienste':'#15803d','Virtualisierung & Storage':'#a16207','Endgeräte':'#7c3aed','Sonstiges':'#64748b'};
+const kindGroupColors={'Physische Geräte':'#334155','VMs':'#15803d','Extern':'#64748b'};
+function getCategoryForDevice(d){
+const icon=getTypeIconPath(tt(d.Type||d.type||''));
+const file=icon.split('/').pop();
+return categoryByIcon[file]||'Sonstiges';
+}
+function getGroupKeyForDevice(d){
+if(viewMode==='category')return getCategoryForDevice(d);
+if(viewMode==='kind'){
+const k=tt(d.Kind||d.kind||'');
+if(k==='VM')return'VMs';
+if(k==='Extern')return'Extern';
+return'Physische Geräte';
+}
+return getGroupForDevice(d);
+}
 function getTypeColor(type){
 const typ=tt(type);
 if(appConfig&&appConfig.typeStyles&&appConfig.typeStyles[typ]&&appConfig.typeStyles[typ].color)return String(appConfig.typeStyles[typ].color);
@@ -807,12 +968,29 @@ function buildLayout(){
 const groups={};
 for(let i=0;i<deviceData.length;i++){
 const d=deviceData[i]||{};
-const g=getGroupForDevice(d);
+const g=getGroupKeyForDevice(d);
 if(!groups[g])groups[g]=[];
 groups[g].push(i);
 }
 const groupKeys=Object.keys(groups);
-groupKeys.sort((a,b)=>{if(a==='Unbekannt')return 1;if(b==='Unbekannt')return-1;return a.localeCompare(b,undefined,{numeric:true});});
+if(viewMode==='category')groupKeys.sort((a,b)=>categoryOrder.indexOf(a)-categoryOrder.indexOf(b));
+else if(viewMode==='kind'){
+const ko=['Physische Geräte','VMs','Extern'];
+groupKeys.sort((a,b)=>ko.indexOf(a)-ko.indexOf(b));
+}
+else groupKeys.sort((a,b)=>{if(a==='Unbekannt')return 1;if(b==='Unbekannt')return-1;return a.localeCompare(b,undefined,{numeric:true});});
+for(const g of groupKeys){
+groups[g].sort(function(a,b){
+const da=deviceData[a]||{};
+const db=deviceData[b]||{};
+const ta=tt(da.Type||da.type||'');
+const tb=tt(db.Type||db.type||'');
+if(ta!==tb)return ta.localeCompare(tb);
+const ha=tt(da.Hostname||da.hostname||da.IP||da.ip||'');
+const hb=tt(db.Hostname||db.hostname||db.IP||db.ip||'');
+return ha.localeCompare(hb,undefined,{numeric:true});
+});
+}
 const svg=document.getElementById('mapSvg');
 const parent=svg.parentElement;
 const w=svg.clientWidth||parent.clientWidth||1200;
@@ -915,6 +1093,34 @@ const edgesLayer=document.createElementNS('http://www.w3.org/2000/svg','g');
 const nodesLayer=document.createElementNS('http://www.w3.org/2000/svg','g');
 const defs=document.createElementNS('http://www.w3.org/2000/svg','defs');
 content.appendChild(defs);
+const hasSel=selectedDeviceIndex!==null||selectedEdgeIndex!==null;
+function isRelatedEdge(ei){
+if(selectedDeviceIndex!==null){
+const e=edges[ei];
+return!!e&&(e.src===selectedDeviceIndex||e.tgt===selectedDeviceIndex);
+}
+if(selectedEdgeIndex!==null)return ei===selectedEdgeIndex;
+return true;
+}
+function isRelatedNode(i){
+if(selectedDeviceIndex!==null){
+if(i===selectedDeviceIndex)return true;
+for(const e of edges){
+if(e.src===selectedDeviceIndex&&e.tgt===i)return true;
+if(e.tgt===selectedDeviceIndex&&e.src===i)return true;
+}
+for(const he of hostEdges){
+if(he.host===selectedDeviceIndex&&he.vm===i)return true;
+if(he.vm===selectedDeviceIndex&&he.host===i)return true;
+}
+return false;
+}
+if(selectedEdgeIndex!==null){
+const e=edges[selectedEdgeIndex];
+return!!e&&(e.src===i||e.tgt===i);
+}
+return true;
+}
 const markerIds={};
 function markerFor(color){
 if(markerIds[color])return markerIds[color];
@@ -951,7 +1157,9 @@ if(!anyVisible)continue;
 const gKey=box.key;
 let gFill='#ffffff';
 let gStroke='#cbd5e1';
-if(appConfig&&appConfig.groupStyles&&appConfig.groupStyles[gKey]){
+if(viewMode==='category')gStroke=categoryColors[gKey]||'#94a3b8';
+else if(viewMode==='kind')gStroke=kindGroupColors[gKey]||'#94a3b8';
+else if(appConfig&&appConfig.groupStyles&&appConfig.groupStyles[gKey]){
 const st=appConfig.groupStyles[gKey];
 if(st.fill)gFill=String(st.fill);
 if(st.stroke)gStroke=String(st.stroke);
@@ -1004,7 +1212,7 @@ hl.setAttribute('y2',String(p2.y));
 hl.setAttribute('stroke','#94a3b8');
 hl.setAttribute('stroke-width','1');
 hl.setAttribute('stroke-dasharray','3 3');
-hl.setAttribute('stroke-opacity','0.7');
+hl.setAttribute('stroke-opacity',hasSel&&!(isRelatedNode(he.host)&&isRelatedNode(he.vm))?'0.08':'0.7');
 hl.style.pointerEvents='none';
 hostLayer.appendChild(hl);
 }
@@ -1016,21 +1224,26 @@ if(px>box.x-pad&&px<box.x+box.w+pad&&py>box.y-pad&&py<box.y+box.h+pad)return tru
 }
 return false;
 }
+function edgeVisible(e){
+if(e.cable&&!layers.cable)return false;
+if(!e.cable&&!layers.svc)return false;
+if(e.blocked&&!layers.blocked)return false;
+if(!visibleDevice[e.src]||!visibleDevice[e.tgt])return false;
+return true;
+}
 const pairMap={};
 for(let i=0;i<edges.length;i++){
 const e=edges[i];
+if(!edgeVisible(e))continue;
 const key=Math.min(e.src,e.tgt)+'_'+Math.max(e.src,e.tgt);
 if(!pairMap[key])pairMap[key]=[];
 pairMap[key].push(i);
 }
 for(let ei=0;ei<edges.length;ei++){
 const e=edges[ei];
-if(e.cable&&!layers.cable)continue;
-if(!e.cable&&!layers.svc)continue;
-if(e.blocked&&!layers.blocked)continue;
+if(!edgeVisible(e))continue;
 const s=e.src;
 const tIdx=e.tgt;
-if(!visibleDevice[s]||!visibleDevice[tIdx])continue;
 const p1=nodePositions[s];
 const p2=nodePositions[tIdx];
 if(!p1||!p2)continue;
@@ -1063,7 +1276,7 @@ if(!segRectHit(x1,y1,x2,y2,box,6))continue;
 const bcx=box.x+box.w/2;
 const bcy=box.y+box.h/2;
 const side=dx*(bcy-y1)-dy*(bcx-x1);
-const need=Math.min(box.w,box.h)/2+48;
+const need=Math.min(box.w,box.h)+88;
 const a=side>0?-need:need;
 if(Math.abs(a)>Math.abs(avoid))avoid=a;
 }
@@ -1100,14 +1313,17 @@ if(e.blocked)edgeColor='#9ca3af';
 path.setAttribute('stroke',edgeColor);
 path.setAttribute('fill','none');
 path.style.pointerEvents='none';
+const related=isRelatedEdge(ei);
+const dimmed=hasSel&&!related;
+const boosted=hasSel&&related;
 if(e.cable){
-path.setAttribute('stroke-width','2.6');
-path.setAttribute('stroke-opacity','0.95');
+path.setAttribute('stroke-width',boosted?'3.4':'2.6');
+path.setAttribute('stroke-opacity',dimmed?'0.12':'0.95');
 }else{
-path.setAttribute('stroke-width','1.4');
-path.setAttribute('stroke-opacity',e.blocked?'0.8':'0.9');
+path.setAttribute('stroke-width',boosted?'2.4':'1.4');
+path.setAttribute('stroke-opacity',dimmed?'0.1':(e.blocked?'0.8':'0.9'));
 if(e.blocked)path.setAttribute('stroke-dasharray','5 4');
-path.setAttribute('marker-end','url(#'+markerFor(edgeColor)+')');
+if(!dimmed)path.setAttribute('marker-end','url(#'+markerFor(edgeColor)+')');
 }
 edgesLayer.appendChild(path);
 if(e.cable){
@@ -1122,6 +1338,7 @@ vt.setAttribute('x',String(lx));
 vt.setAttribute('y',String(ly-4));
 vt.setAttribute('text-anchor','middle');
 vt.setAttribute('class','cableLabel');
+if(dimmed)vt.setAttribute('opacity','0.12');
 vt.textContent='VLAN '+vl;
 edgesLayer.appendChild(vt);
 }
@@ -1134,13 +1351,27 @@ const pos=nodePositions[i];
 if(!pos)continue;
 const g=document.createElementNS('http://www.w3.org/2000/svg','g');
 g.setAttribute('data-index',String(i));
+if(hasSel&&!isRelatedNode(i))g.setAttribute('opacity','0.22');
+const nodeColor=getTypeColor(d.Type||d.type||'');
+if(selectedDeviceIndex===i){
+const halo=document.createElementNS('http://www.w3.org/2000/svg','circle');
+halo.setAttribute('cx',String(pos.x));
+halo.setAttribute('cy',String(pos.y));
+halo.setAttribute('r','23');
+halo.setAttribute('fill',nodeColor);
+halo.setAttribute('fill-opacity','0.16');
+halo.setAttribute('stroke',nodeColor);
+halo.setAttribute('stroke-opacity','0.45');
+halo.setAttribute('stroke-width','1');
+g.appendChild(halo);
+}
 const r=document.createElementNS('http://www.w3.org/2000/svg','circle');
 r.setAttribute('cx',String(pos.x));
 r.setAttribute('cy',String(pos.y));
 r.setAttribute('r','16');
-r.setAttribute('fill','#f9fafb');
-r.setAttribute('stroke',getTypeColor(d.Type||d.type||''));
-r.setAttribute('stroke-width',selectedDeviceIndex===i?'2.0':'1.2');
+r.setAttribute('fill',selectedDeviceIndex===i?'#ffffff':'#f9fafb');
+r.setAttribute('stroke',nodeColor);
+r.setAttribute('stroke-width',selectedDeviceIndex===i?'2.6':'1.2');
 const kind=tt(d.Kind||d.kind||'');
 if(kind==='VM')r.setAttribute('stroke-dasharray','4 2');
 else if(kind==='Extern')r.setAttribute('stroke-dasharray','2 2');
@@ -1202,7 +1433,8 @@ const type=tt(d.Type||d.type||'');
 const kindHay=tt(d.Kind||d.kind||'');
 const rangeHay=tt(d.IPRange||'');
 const vlan=getVlanKey(ip);
-hay=(hn+' '+ip+' '+type+' '+kindHay+' '+rangeHay+' '+vlan).toLowerCase();
+const catHay=getCategoryForDevice(d);
+hay=(hn+' '+ip+' '+type+' '+kindHay+' '+rangeHay+' '+vlan+' '+catHay).toLowerCase();
 const devNotes=tt(d.Notes||d.notes||'');
 if(devNotes)hay+=' '+devNotes.toLowerCase();
 const conns=Array.isArray(d.Connections)?d.Connections:[];
@@ -1336,6 +1568,7 @@ addRow('IP-Adresse',ip);
 addRow('Typ',tt(d.Type||d.type||''));
 const kindRow=tt(d.Kind||d.kind||'');
 if(kindRow!=='')addRow('Art',kindRow);
+addRow('Kategorie',getCategoryForDevice(d));
 const rangeRow=tt(d.IPRange||'');
 if(rangeRow!=='')addRow('IP-Bereich',rangeRow);
 for(const he of hostEdges){
@@ -1618,24 +1851,33 @@ function selectDevice(index){
 const i=Number(index);
 if(!Number.isInteger(i)||i<0||i>=deviceData.length)return;
 selectedDeviceIndex=i;
+selectedEdgeIndex=null;
 renderDeviceOverlay(i);
-buildLayout();
+renderMap();
 }
 function selectConnectionByEdge(edgeIndex){
 const e=edges[edgeIndex];
 if(!e)return;
-const srcIdx=e.src;
-selectedDeviceIndex=srcIdx;
-renderConnectionOverlay(srcIdx,e.connIndex);
-buildLayout();
+selectedDeviceIndex=null;
+selectedEdgeIndex=edgeIndex;
+renderConnectionOverlay(e.src,e.connIndex);
+renderMap();
+}
+function clearSelection(){
+if(selectedDeviceIndex===null&&selectedEdgeIndex===null)return;
+selectedDeviceIndex=null;
+selectedEdgeIndex=null;
+renderMap();
 }
 function markDirty(){
+if(demoActive)return;
 dirty=true;
 const b=document.getElementById('btnSave');
 b.classList.add('dirtyState');
 b.textContent='Speichern *';
 }
 function rebuildAll(){
+selectedEdgeIndex=null;
 buildIndexes();
 applyFilterFromSearch();
 buildLayout();
@@ -1652,7 +1894,8 @@ keys.sort();
 return keys;
 }
 function updateFwSection(){
-const isFw=document.getElementById('devType').value==='Firewall'||getTypeIconPath(document.getElementById('devType').value).indexOf('firewall.svg')!==-1;
+const t=devTypeCombo?devTypeCombo.get():'';
+const isFw=t==='Firewall'||getTypeIconPath(t).indexOf('firewall.svg')!==-1;
 document.getElementById('fwSection').style.display=isFw?'block':'none';
 }
 function updateConnKind(){
@@ -1660,43 +1903,87 @@ const cable=document.getElementById('connKind').value==='cable';
 document.getElementById('connServiceRow').style.display=cable?'none':'flex';
 document.getElementById('connVlanRow').style.display=cable?'flex':'none';
 }
-function fillServiceSelect(){
-const sel=document.getElementById('connService');
-sel.innerHTML='';
-const first=document.createElement('option');
-first.value='';
-first.textContent='– Dienst –';
-sel.appendChild(first);
-for(const k of serviceKeys()){
-const o=document.createElement('option');
-o.value=k;
-const lbl=resolveServiceLabel(k);
-o.textContent=lbl!==k?k+' · '+lbl:k;
-sel.appendChild(o);
+function setupCombo(inputId,listId,getOptions,onPick){
+const inp=document.getElementById(inputId);
+const list=document.getElementById(listId);
+let valid='';
+function choose(v){
+valid=v;
+inp.value=v;
+list.style.display='none';
+if(onPick)onPick(v);
 }
+function render(filter){
+list.innerHTML='';
+const f=String(filter||'').toLowerCase();
+let n=0;
+for(const o of getOptions()){
+if(f!==''&&o.label.toLowerCase().indexOf(f)===-1&&o.value.toLowerCase().indexOf(f)===-1)continue;
+const it=document.createElement('div');
+it.className='comboItem'+(o.value===valid?' active':'');
+if(o.icon){
+const im=document.createElement('img');
+im.src=o.icon;
+im.alt='';
+it.appendChild(im);
 }
-function updateTypeIcon(){
-document.getElementById('devTypeIcon').src=getTypeIconPath(document.getElementById('devType').value);
+const sp=document.createElement('span');
+sp.textContent=o.value;
+it.appendChild(sp);
+if(o.sub){
+const su=document.createElement('span');
+su.className='comboSub';
+su.textContent=o.sub;
+it.appendChild(su);
 }
-function fillTypeSelect(current){
-const sel=document.getElementById('devType');
-sel.innerHTML='';
-let found=false;
+it.addEventListener('mousedown',function(ev){ev.preventDefault();choose(o.value);});
+list.appendChild(it);
+n++;
+}
+list.style.display=n>0?'block':'none';
+}
+inp.addEventListener('focus',function(){render('');inp.select();});
+inp.addEventListener('input',function(){render(inp.value);});
+inp.addEventListener('blur',function(){setTimeout(function(){list.style.display='none';if(inp.value!==valid)inp.value=valid;},120);});
+inp.addEventListener('keydown',function(e){
+if(e.key==='Enter'){
+e.preventDefault();
+const first=list.querySelector('.comboItem');
+if(first&&list.style.display!=='none')first.dispatchEvent(new MouseEvent('mousedown'));
+}else if(e.key==='Escape'&&list.style.display!=='none'){
+e.stopPropagation();
+list.style.display='none';
+inp.value=valid;
+}
+});
+return{
+set:function(v){valid=tt(v);inp.value=valid;},
+get:function(){return valid;}
+};
+}
+let devTypeCombo=null;
+let connServiceCombo=null;
+function typeOptions(){
+const opts=[];
 for(const k in typeCatalog){
 if(!Object.prototype.hasOwnProperty.call(typeCatalog,k))continue;
-const o=document.createElement('option');
-o.value=k;
-o.textContent=k;
-if(k===current){o.selected=true;found=true;}
-sel.appendChild(o);
+opts.push({value:k,label:k,icon:iconBase+typeCatalog[k].icon});
 }
-if(current&&!found){
-const o=document.createElement('option');
-o.value=current;
-o.textContent=current+' (bestehend)';
-o.selected=true;
-sel.appendChild(o);
+return opts;
 }
+function serviceOptions(){
+const opts=[];
+for(const k of serviceKeys()){
+const lbl=resolveServiceLabel(k);
+opts.push({value:k,label:k+' '+lbl,sub:lbl!==k?lbl:''});
+}
+return opts;
+}
+function updateTypeIcon(){
+document.getElementById('devTypeIcon').src=getTypeIconPath(devTypeCombo?devTypeCombo.get():'');
+}
+function fillTypeSelect(current){
+devTypeCombo.set(current);
 updateTypeIcon();
 }
 function openDeviceModal(index){
@@ -1737,9 +2024,28 @@ const hn=document.getElementById('devHostname').value.trim();
 const ip=document.getElementById('devIP').value.trim();
 if(hn===''&&ip===''){alert('Mindestens Hostname oder IP-Adresse muss gesetzt sein.');return;}
 const dev=editingIndex!==null&&deviceData[editingIndex]?deviceData[editingIndex]:{};
+const oldHn=tt(dev.Hostname||dev.hostname||'');
+const oldIp=tt(dev.IP||dev.ip||'');
 if(hn!=='')dev.Hostname=hn;else delete dev.Hostname;
 if(ip!=='')dev.IP=ip;else delete dev.IP;
-dev.Type=document.getElementById('devType').value;
+if(editingIndex!==null&&(oldHn!==hn||oldIp!==ip)){
+for(const other of deviceData){
+if(!other||!Array.isArray(other.Connections))continue;
+for(const c of other.Connections){
+if(!c)continue;
+const tg=tt(c.target||'');
+if(tg==='')continue;
+if(oldHn!==''&&tg.toLowerCase()===oldHn.toLowerCase()){
+c.target=hn!==''?hn:ip;
+c.targetType=hn!==''?'hostname':'ip';
+}else if(oldIp!==''&&tg===oldIp){
+c.target=ip!==''?ip:hn;
+c.targetType=ip!==''?'ip':'hostname';
+}
+}
+}
+}
+dev.Type=devTypeCombo.get()||'Gerät (Sonstiges)';
 dev.Kind=document.getElementById('devKind').value;
 const range=document.getElementById('devRange').value.trim();
 if(range!==''&&range.indexOf('/')!==-1)dev.IPRange=range;else delete dev.IPRange;
@@ -1766,7 +2072,8 @@ function deleteDevice(index){
 const d=deviceData[index]||{};
 const hn=tt(d.Hostname||d.hostname||'');
 const ip=tt(d.IP||d.ip||'');
-if(!confirm('Gerät „'+(hn||ip)+'" wirklich löschen? Verbindungen von und zu diesem Gerät werden entfernt.'))return;
+if(!confirm('Gerät „'+(hn||ip)+'" löschen (inkl. Verbindungen)?'))return;
+cancelConnectMode();
 deviceData.splice(index,1);
 for(const other of deviceData){
 if(!other||!Array.isArray(other.Connections))continue;
@@ -1806,7 +2113,7 @@ const t=deviceData[tgt]||{};
 const sName=tt(s.Hostname||s.hostname||s.IP||s.ip||'?');
 const tName=tt(t.Hostname||t.hostname||t.IP||t.ip||'?');
 document.getElementById('connModalInfo').textContent=sName+' → '+tName;
-fillServiceSelect();
+connServiceCombo.set('');
 document.getElementById('connKind').value=connectKindPreset;
 updateConnKind();
 document.getElementById('connPort').value='';
@@ -1831,7 +2138,7 @@ obj.connType='Kabel';
 const vl=document.getElementById('connVlans').value.trim();
 if(vl!=='')obj.vlans=vl;
 }else{
-const svc=document.getElementById('connService').value;
+const svc=connServiceCombo.get();
 if(svc!=='')obj.connType=svc;
 const portStr=document.getElementById('connPort').value.trim();
 if(portStr!==''){
@@ -1858,10 +2165,152 @@ markDirty();
 rebuildAll();
 selectDevice(devIndex);
 }
+function guessTypeFromName(name){
+const n=String(name).toLowerCase();
+const rules=[
+[/^(fw|fgt|asa|pfsense|opn)/,'Firewall'],
+[/^(sw|switch)/,'Switch'],
+[/^(rt|router|edge)/,'Router'],
+[/^(gw|gateway)/,'Router'],
+[/^(ap[0-9-]|ap$|wlan|wifi)/,'Access Point'],
+[/^(esx|pve|prox|hv[0-9-]|xen|kvm|vmh)/,'Hypervisor'],
+[/^dc[0-9-]/,'Domain-Controller'],
+[/^(db|sql|ora|pg|mysql)/,'Datenbank'],
+[/^(nas|stor|san)/,'Storage/NAS'],
+[/^(prn|print|drucker)/,'Drucker'],
+[/^(cam|kamera|nvr)/,'Kamera'],
+[/^(tel|voip|pbx)/,'VoIP-Telefon'],
+[/^(usv|ups)/,'USV'],
+[/^(mon|zbx|prtg|nagios|graf)/,'Monitoring'],
+[/^(mail|mx[0-9-]|smtp|exch)/,'Mail-Server'],
+[/^(web|www|nginx|apache)/,'Web-Server'],
+[/^dns/,'DNS-Server'],
+[/^dhcp/,'DHCP-Server'],
+[/^(bkp|backup|veeam)/,'Backup'],
+[/^(inet|wan|isp|provider)/,'Internet/Provider'],
+[/^(hotspot|mifi)/,'Hotspot'],
+[/^(nb|lt|laptop|note)/,'Laptop'],
+[/^(handy|iphone|android|mobil|smart)/,'Smartphone'],
+[/^(tab|ipad)/,'Tablet'],
+[/^(pc|ws[0-9-]|wks|desk|client)/,'PC'],
+[/^(srv|server|host)/,'Server']
+];
+for(const r of rules){if(r[0].test(n))return r[1];}
+return null;
+}
+function guessTypeFromText(text){
+const file=getDefaultTypeIcon(String(text));
+if(file!=='device.svg'){
+for(const k in typeCatalog){
+if(!Object.prototype.hasOwnProperty.call(typeCatalog,k))continue;
+if(typeCatalog[k].icon===file)return k;
+}
+}
+return null;
+}
+function deviceExists(hostname,ip){
+for(const d of deviceData){
+const dh=tt((d||{}).Hostname||(d||{}).hostname||'');
+const di=tt((d||{}).IP||(d||{}).ip||'');
+if(hostname!==''&&dh!==''&&dh.toLowerCase()===hostname.toLowerCase())return true;
+if(ip!==''&&di!==''&&di===ip)return true;
+}
+return false;
+}
+function parseQuickLines(text){
+const out=[];
+const seenH={};
+const seenI={};
+const lines=String(text).split(/\r\n|\n|\r/);
+for(const line of lines){
+const lt=line.trim();
+if(lt===''||lt.charAt(0)==='#')continue;
+const tokens=lt.split(/[\s,;\t]+/).filter(Boolean);
+let ip='';
+let hostname='';
+const rest=[];
+for(const tk of tokens){
+if(ip===''&&/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(tk)&&ipToInt(tk)!==null)ip=tk;
+else if(hostname==='')hostname=tk;
+else rest.push(tk);
+}
+if(hostname===''&&ip==='')continue;
+let type=null;
+if(rest.length>0)type=guessTypeFromText(rest.join(' '));
+if(!type&&hostname!=='')type=guessTypeFromName(hostname)||guessTypeFromText(hostname);
+if(!type)type='Gerät (Sonstiges)';
+const dupInBatch=(hostname!==''&&seenH[hostname.toLowerCase()])||(ip!==''&&seenI[ip]);
+if(hostname!=='')seenH[hostname.toLowerCase()]=true;
+if(ip!=='')seenI[ip]=true;
+out.push({Hostname:hostname,IP:ip,Type:type,exists:dupInBatch||deviceExists(hostname,ip)});
+}
+return out;
+}
+function renderQuickPreview(){
+const list=parseQuickLines(document.getElementById('quickText').value);
+const box=document.getElementById('quickPreview');
+box.innerHTML='';
+for(const item of list){
+const row=document.createElement('div');
+row.className='quickRow'+(item.exists?' qskip':'');
+const img=document.createElement('img');
+img.src=getTypeIconPath(item.Type);
+img.alt='';
+row.appendChild(img);
+const qh=document.createElement('span');
+qh.className='qh';
+qh.textContent=item.Hostname||'–';
+row.appendChild(qh);
+const qi=document.createElement('span');
+qi.className='qi';
+qi.textContent=item.IP||'–';
+row.appendChild(qi);
+const qt=document.createElement('span');
+qt.className='qt';
+qt.textContent='→ '+item.Type;
+row.appendChild(qt);
+if(item.exists){
+const qs=document.createElement('span');
+qs.className='qs';
+qs.textContent='existiert bereits – wird übersprungen';
+row.appendChild(qs);
+}
+box.appendChild(row);
+}
+return list;
+}
+function openQuickModal(){
+document.getElementById('quickText').value='';
+document.getElementById('quickPreview').innerHTML='';
+document.getElementById('quickModal').style.display='flex';
+document.getElementById('quickText').focus();
+}
+function closeQuickModal(){
+document.getElementById('quickModal').style.display='none';
+}
+function applyQuickModal(){
+const list=parseQuickLines(document.getElementById('quickText').value);
+let added=0;
+for(const item of list){
+if(item.exists)continue;
+const dev={Type:item.Type,Kind:'Physisch',Connections:[]};
+if(item.Hostname!=='')dev.Hostname=item.Hostname;
+if(item.IP!=='')dev.IP=item.IP;
+deviceData.push(dev);
+added++;
+}
+closeQuickModal();
+if(added>0){
+markDirty();
+rebuildAll();
+}
+}
 function saveConfigNow(){
+if(demoActive)return;
+if(totpSetup)return;
 const code=(document.getElementById('totpInput').value||'').replace(/\s+/g,'');
 if(!/^\d{6}$/.test(code)){
-alert('Zum Speichern den 6-stelligen TOTP-Code aus der Authenticator-App ins Feld neben „Speichern" eingeben.');
+alert('Bitte 6-stelligen TOTP-Code eingeben.');
 document.getElementById('totpInput').focus();
 return;
 }
@@ -1933,6 +2382,7 @@ showCtxMenu(ev,[
 function showCanvasMenu(ev){
 showCtxMenu(ev,[
 {label:'+ Neues Gerät…',fn:function(){openDeviceModal(null);}},
+{label:'⚡ Schnell einfügen…',fn:function(){openQuickModal();}},
 {sep:true},
 {label:'Ansicht zurücksetzen',fn:function(){mapScale=1;mapOffsetX=0;mapOffsetY=0;updateMapTransform();}},
 {label:'Speichern',fn:function(){saveConfigNow();}}
@@ -2110,18 +2560,27 @@ const idx=editingIndex;
 closeDeviceModal();
 deleteDevice(idx);
 });
-document.getElementById('devType').addEventListener('change',function(){updateTypeIcon();updateFwSection();});
+devTypeCombo=setupCombo('devType','devTypeOpts',typeOptions,function(){updateTypeIcon();updateFwSection();});
+connServiceCombo=setupCombo('connService','connServiceOpts',serviceOptions,null);
 document.getElementById('connKind').addEventListener('change',updateConnKind);
 document.getElementById('btnConnClose').addEventListener('click',closeConnModal);
 document.getElementById('btnConnCancel').addEventListener('click',closeConnModal);
 document.getElementById('btnConnApply').addEventListener('click',applyConnModal);
 document.getElementById('btnConnectCancel').addEventListener('click',cancelConnectMode);
-document.getElementById('deviceModal').addEventListener('click',function(e){if(e.target===this)closeDeviceModal();});
-document.getElementById('connModal').addEventListener('click',function(e){if(e.target===this)closeConnModal();});
+function backdropClose(id,closeFn){
+const el=document.getElementById(id);
+let downOnBackdrop=false;
+el.addEventListener('mousedown',function(e){downOnBackdrop=e.target===el;});
+el.addEventListener('click',function(e){if(e.target===el&&downOnBackdrop)closeFn();});
+}
+backdropClose('deviceModal',closeDeviceModal);
+backdropClose('connModal',closeConnModal);
+backdropClose('quickModal',closeQuickModal);
 document.addEventListener('keydown',function(e){
 if(e.key!=='Escape')return;
 closeDeviceModal();
 closeConnModal();
+closeQuickModal();
 cancelConnectMode();
 hideCtxMenu();
 });
@@ -2134,21 +2593,43 @@ const layerMap={lyVlan:'vlan',lyCable:'cable',lySvc:'svc',lyBlocked:'blocked',ly
 for(const id in layerMap){
 if(!Object.prototype.hasOwnProperty.call(layerMap,id))continue;
 document.getElementById(id).addEventListener('change',(function(key,el){
-return function(){layers[key]=el.checked;renderMap();};
+return function(){
+layers[key]=el.checked;
+if(selectedEdgeIndex!==null){
+const e=edges[selectedEdgeIndex];
+if(!e||(e.cable&&!layers.cable)||(!e.cable&&!layers.svc)||(e.blocked&&!layers.blocked)){
+selectedEdgeIndex=null;
+hideOverlay();
+}
+}
+renderMap();
+};
 })(layerMap[id],document.getElementById(id)));
 }
+document.getElementById('viewModeSel').addEventListener('change',function(){
+viewMode=this.value;
+clearSelection();
+hideOverlay();
+buildLayout();
+});
+document.getElementById('btnQuickAdd').addEventListener('click',openQuickModal);
+document.getElementById('btnQuickClose').addEventListener('click',closeQuickModal);
+document.getElementById('btnQuickCancel').addEventListener('click',closeQuickModal);
+document.getElementById('btnQuickApply').addEventListener('click',applyQuickModal);
+document.getElementById('quickText').addEventListener('input',renderQuickPreview);
 document.getElementById('totpInput').addEventListener('keydown',function(e){
 if(e.key==='Enter')saveConfigNow();
 });
-if(totpSetup){
-const tm=document.getElementById('totpModal');
-function openTotp(){tm.style.display='flex';renderTotpQr();}
-document.getElementById('btnTotpClose').addEventListener('click',function(){tm.style.display='none';});
-document.getElementById('btnTotpOk').addEventListener('click',function(){tm.style.display='none';document.getElementById('totpInput').focus();});
-tm.addEventListener('click',function(e){if(e.target===tm)tm.style.display='none';});
-const mfaLink=document.getElementById('mfaLink');
-if(mfaLink)mfaLink.addEventListener('click',function(e){e.preventDefault();openTotp();});
-openTotp();
+if(totpSetup)renderTotpQr();
+if(demoActive){
+const b=document.getElementById('btnSave');
+b.disabled=true;
+b.textContent='Beispiel';
+document.getElementById('totpInput').disabled=true;
+const dn=document.createElement('div');
+dn.className='notice ok';
+dn.textContent='Beispiel-Netzwerk (temporär) – Neuladen zeigt wieder dein Netz.';
+document.body.appendChild(dn);
 }
 if(initialDirty)markDirty();
 window.addEventListener('beforeunload',function(e){
@@ -2157,11 +2638,18 @@ e.preventDefault();
 e.returnValue='';
 });
 const notice=document.getElementById('saveNotice');
-if(notice&&notice.classList.contains('ok'))setTimeout(function(){notice.style.display='none';},2500);
+if(notice){
+notice.style.cursor='pointer';
+notice.title='Klicken zum Schließen';
+notice.addEventListener('click',function(){notice.style.display='none';});
+if(notice.classList.contains('ok'))setTimeout(function(){notice.style.display='none';},2500);
+}
 }
 function setupSearch(){
 const input=document.getElementById('searchInput');
 input.addEventListener('input',function(){
+selectedDeviceIndex=null;
+selectedEdgeIndex=null;
 applyFilterFromSearch();
 buildLayout();
 hideOverlay();
@@ -2189,8 +2677,10 @@ mapOffsetY=cy-(cy-mapOffsetY)*ratio;
 mapScale=newScale;
 updateMapTransform();
 },{passive:false});
+let panMoved=false;
 svg.addEventListener('mousedown',function(ev){
 isPanning=true;
+panMoved=false;
 lastPanX=ev.clientX;
 lastPanY=ev.clientY;
 });
@@ -2198,6 +2688,7 @@ window.addEventListener('mousemove',function(ev){
 if(!isPanning)return;
 const dx=ev.clientX-lastPanX;
 const dy=ev.clientY-lastPanY;
+if(Math.abs(dx)+Math.abs(dy)>2)panMoved=true;
 lastPanX=ev.clientX;
 lastPanY=ev.clientY;
 mapOffsetX+=dx;
@@ -2205,7 +2696,11 @@ mapOffsetY+=dy;
 updateMapTransform();
 });
 window.addEventListener('mouseup',function(){isPanning=false;});
-svg.addEventListener('click',function(){hideOverlay();});
+svg.addEventListener('click',function(){
+if(panMoved){panMoved=false;return;}
+hideOverlay();
+clearSelection();
+});
 }
 function setupResize(){
 if(typeof ResizeObserver==='undefined')return;
