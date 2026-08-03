@@ -7,7 +7,10 @@ Zielserver (`liarc-data/`), nie im Repo.
 
 ## Harte Regeln
 
-- Nur Apache + PHP-Standardumfang. Keine Pakete, keine DB, keine externen CDNs.
+- Nur Apache + PHP-Standardumfang (min. PHP 8.1). Keine Pakete, keine DB,
+  keine externen CDNs.
+- Die Instance laedt Loader und Routen vom Branch in `$liarc_branch`;
+  auf shared hosting darf der Loader nie `exec()` voraussetzen.
 - Route-Dateien laufen über den Repo-Loader (`?_page=`), laden `lib.php` über
   `app_get_local_script` und beginnen alle mit demselben Boot-Block.
 - Krypto/Auth nur in lib.php ändern; DEK nie unverschlüsselt persistieren.

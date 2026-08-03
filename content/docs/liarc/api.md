@@ -35,9 +35,9 @@ GET    /api/devices
 DELETE /api/devices/{id}
 
 GET    /api/groups                              Gruppen mit Kategorie-Keys
-GET    /api/categories                          inkl. Statistik (Keys fest: contacts, phones,
-                                                heart, weight, height, steps, sleep, temp,
-                                                medical, passwords, certs, serials, documents, notes)
+GET    /api/categories                          inkl. Statistik (Keys fest: contacts, heart,
+                                                weight, height, steps, sleep, temp, medical,
+                                                passwords, certs, serials, documents, notes)
 GET    /api/categories/{key}
 GET    /api/categories/{key}/stats              bei series inkl. points
 GET    /api/categories/{key}/entries

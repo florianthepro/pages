@@ -8,8 +8,8 @@ content/instances/liarc.php     eine Datei, wird als index.php auf den Server ko
 content/routes/liarc/           Funktionen (via Loader von GitHub raw geladen, tmp-Cache)
   lib.php                       Kern: crypto, store, auth, devices, vault, i18n, ui
                                 + liarc_groups()/liarc_categories(): hier Gruppen/Kategorien/Felder aendern
-  index.php                     Hauptseite (Gruppen-Tabs, Kategorie-Chips, Inhalt)
-                                + Dispatcher fuer huebsche URLs (/login, /api/...)
+  index.php                     Hauptseite (Handy: Startliste, PC: erste Kategorie)
+                                + Kategorie-Ansichten + Dispatcher fuer huebsche URLs
   auth.php                      login/register/logout/install (?v=)
   data.php                      Schreib-Endpunkte Web (POST, ?do=)
   devices.php  settings.php     Geraete, Einstellungen

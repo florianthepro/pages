@@ -86,7 +86,7 @@ if (!isset($ranges[$range])) $range = '30';
 $shown = array_values(array_filter($entries, fn($e) => ($e['status'] ?? 'active') === 'active'));
 if ($range !== 'all') {
     $cut = liarc_now() - (int)$range * 86400;
-    $shown = array_values(array_filter($entries, fn($e) => $e['at'] >= $cut));
+    $shown = array_values(array_filter($shown, fn($e) => $e['at'] >= $cut));
 }
 $stats = liarc_category_stats($cat, $shown);
 ?>

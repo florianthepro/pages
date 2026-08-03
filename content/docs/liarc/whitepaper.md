@@ -16,7 +16,10 @@ Frühere Arbeitsnamen: DSL (dynamic-secure-life), dann LIA (Domain nicht frei).
 
 - Zwei Datenarten: Messreihen (Zahlen über Zeit, mit Statistik und Diagramm)
   und Einträge (Datensätze mit Feldern und Status aktiv/alt).
-- Als alt markierte Einträge (z.B. alte Nummern) erscheinen als Liste, nie in Statistiken.
+- Nichts wird gelöscht: Bearbeiten erzeugt eine neue Version, die alte wandert
+  ins Archiv (Status alt, nie in Statistiken). Einzige echte Löschung: der Account.
+- Getrennte Oberflächen: Handy = App-Aufbau (Startliste, Unteransichten,
+  Tab-Leiste), PC = Seitenleiste – nie beides zugleich.
 - Datumsfelder rechnen mit (Geburtsdatum → Alter).
 - Alle Nutzdaten verschlüsselt; Schlüssel nur aus Passwort oder Geräteschlüssel ableitbar.
 - Keine Interaktion zwischen Nutzern.
@@ -29,7 +32,8 @@ Frühere Arbeitsnamen: DSL (dynamic-secure-life), dann LIA (Domain nicht frei).
 Paperless (dokumentenzentriert, schwerer Stack), Nextcloud (Dateien, Mehrbenutzer),
 Grocy u.ä. (domänenspezifisch) passen nicht. Daraus abgeleitet:
 
-1. Läuft auf jedem Apache+PHP-Hosting, keine Pakete, keine Datenbank.
+1. Läuft auf jedem Apache-Hosting mit PHP 8.1+, keine Pakete, keine Datenbank
+   (die Instance prüft die PHP-Version und meldet zu alte klar statt 500).
 2. Alle Lebensbereiche fest vorkonfiguriert, Anpassung nur zentral im Code.
 3. Verschlüsselung als Default, keine Konfiguration.
 4. Deployment = eine Datei kopieren (Instance-Format des Repos); .htaccess
