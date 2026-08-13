@@ -12,8 +12,8 @@ $csvreporting_jsonfile='data.json';
 $csvreporting_jspnbakdir='/var/www/html/'.$csvreporting_projectpath.'/tmp';
 $csvreporting_csvdir='/var/www/html/'.$csvreporting_projectpath.'/'.$csvreporting_csvfile;
 $csvreporting_jsondir='/var/www/html/'.$csvreporting_projectpath.'/'.$csvreporting_jsonfile;
-$csvreporting_editorheading=$csvreporting_heading.' '.$csvreporting_editortitle;
 $csvreporting_editortitle='Rules Editor';
+$csvreporting_editorheading=$csvreporting_heading.' '.$csvreporting_editortitle;
 $csvreporting_icon='https://raw.githubusercontent.com/florianthepro/pages/main/content/media/csv-reporting/index.svg';
 $csvreporting_editoricon='https://raw.githubusercontent.com/florianthepro/pages/main/content/media/csv-reporting/edit.svg';
 
