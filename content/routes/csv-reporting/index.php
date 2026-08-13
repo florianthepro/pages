@@ -327,7 +327,7 @@ if($pass)$filtered[]=$row;
 
 ?>
 <!doctype html>
-<html lang="de">
+<?php $__th=(isset($csvreporting_theme)&&in_array($csvreporting_theme,['light','dark'],true))?$csvreporting_theme:'auto'; ?><html lang="de"<?= $__th==='light'?' data-theme="light"':($__th==='dark'?' data-theme="dark"':'') ?>>
 <head>
 <meta charset="utf-8">
 <meta name="color-scheme" content="only light">
@@ -364,6 +364,24 @@ th{background:#f6f6f6;color:#000000}
 .filter-item:last-child{margin-bottom:0}
 .filter-row select{padding:4px;border:1px solid #ccc;border-radius:3px;font-size:13px;width:100%;box-sizing:border-box}
 .filter-label{font-size:12px;font-weight:bold;margin-bottom:4px;color:#333}
+</style>
+<style>
+:root{--bg:#ffffff;--fg:#000000;--muted:#333333;--border:#dddddd;--panel:#f6f6f6;--panelhead:#f6f6f6;--accent:#0070ff;--accent-fg:#fff;--link:#0645ad;--danger:#990000;}
+:root[data-theme="dark"]{--bg:#0f1113;--fg:#e6e6e6;--muted:#9aa0a6;--border:#333333;--panel:#181b1e;--panelhead:#20242a;--accent:#4c8dff;--accent-fg:#fff;--link:#6ea8fe;--danger:#ff6b6b;}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]):not([data-theme="dark"]){--bg:#0f1113;--fg:#e6e6e6;--muted:#9aa0a6;--border:#333333;--panel:#181b1e;--panelhead:#20242a;--accent:#4c8dff;--accent-fg:#fff;--link:#6ea8fe;--danger:#ff6b6b;}}
+body{background:var(--bg);color:var(--fg);}
+table{background:var(--bg);}
+th,td{border-color:var(--border);color:var(--fg);}
+th{background:var(--panelhead);}
+td{background:var(--bg);}
+a{color:var(--link);}
+.error{color:var(--danger);}
+.info{color:var(--muted);}
+input,select,textarea{background:var(--bg);color:var(--fg);border-color:var(--border);}
+.filter-toggle,.filter-row,.filter-item,.rules-overlay,.rules-overlay-item,.rules-overlay-title,.fk-menu-panel,.modal,.badge,.group-row,.view-toggle{background:var(--panel);border-color:var(--border);color:var(--fg);}
+button{border-color:var(--border);}
+:root[data-theme="dark"] td[style*="ffe5e5"]{background:#5a1e1e!important;color:#ffdede!important;}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]):not([data-theme="dark"]) td[style*="ffe5e5"]{background:#5a1e1e!important;color:#ffdede!important;}}
 </style>
 </head>
 <body>

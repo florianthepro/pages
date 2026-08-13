@@ -13,6 +13,8 @@ $liarc_repo='https://raw.githubusercontent.com/florianthepro/pages/'.$liarc_bran
 $liarc_icon=$liarc_repo.'/media/liarc/liarc.svg';
 if($liarc_debug){ini_set('display_errors','1');error_reporting(E_ALL);}
 
+$liarc_theme='auto'; #'light' (fix hell) | 'dark' (fix dunkel) | 'auto' (dynamisch, folgt System)
+
 $sharedVars=get_defined_vars();
 
 $yaml=<<<YAML

@@ -17,6 +17,8 @@ $csvreporting_editorheading=$csvreporting_heading.' '.$csvreporting_editortitle;
 $csvreporting_icon='https://raw.githubusercontent.com/florianthepro/pages/main/content/media/csv-reporting/index.svg';
 $csvreporting_editoricon='https://raw.githubusercontent.com/florianthepro/pages/main/content/media/csv-reporting/edit.svg';
 
+$csvreporting_theme='auto'; #'light' (fix hell) | 'dark' (fix dunkel) | 'auto' (dynamisch, folgt System)
+
 $sharedVars=get_defined_vars();
 
 $yaml=<<<'YAML'

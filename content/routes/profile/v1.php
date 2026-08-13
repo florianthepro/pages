@@ -27,7 +27,7 @@ function e(string $value): string {
 }
 ?>
 <!DOCTYPE html>
-<html lang="de">
+<?php $__th=(isset($profile_theme)&&in_array($profile_theme,['light','dark'],true))?$profile_theme:'auto'; ?><html lang="de"<?= $__th==='light'?' data-theme="light"':($__th==='dark'?' data-theme="dark"':'') ?>>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -45,8 +45,8 @@ function e(string $value): string {
         }
         body {
             font-family: Inter, Arial, Helvetica, sans-serif;
-            background: #000;
-            color: #fff;
+            background: var(--bg);
+            color: var(--fg);
             display: flex;
             justify-content: center;
             padding: 32px 14px;
@@ -66,7 +66,7 @@ function e(string $value): string {
             object-fit: cover;
             display: block;
             margin: 34px auto 18px;
-            background: #1a1a1a;
+            background: var(--card);
         }
         h1 {
             font-size: 20px;
@@ -77,7 +77,7 @@ function e(string $value): string {
             letter-spacing: -0.01em;
         }
         .bio {
-            color: #fff;
+            color: var(--fg);
             opacity: .96;
             font-size: 16px;
             line-height: 1.45;
@@ -95,8 +95,8 @@ function e(string $value): string {
             width: 100%;
             min-height: 64px;
             border-radius: 16px;
-            background: #151515;
-            color: #fff;
+            background: var(--card2);
+            color: var(--fg);
             text-decoration: none;
             display: grid;
             grid-template-columns: 44px 1fr 44px;
@@ -105,14 +105,14 @@ function e(string $value): string {
             transition: transform .14s ease, background .14s ease;
         }
         .link:hover {
-            background: #202020;
+            background: var(--hover);
             transform: translateY(-1px);
         }
         .link:active {
             transform: scale(.99);
         }
         .link:focus-visible {
-            outline: 2px solid #fff;
+            outline: 2px solid var(--fg);
             outline-offset: 4px;
         }
         .icon {
@@ -153,6 +153,11 @@ function e(string $value): string {
                 gap: 14px;
             }
         }
+</style>
+<style>
+:root{--bg:#000000;--fg:#ffffff;--card:#1a1a1a;--card2:#151515;--hover:#202020;--link:#6ea8fe;}
+:root[data-theme="light"]{--bg:#f5f5f7;--fg:#111111;--card:#ffffff;--card2:#e9e9ee;--hover:#e2e2e8;--link:#0645ad;}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]):not([data-theme="light"]){--bg:#f5f5f7;--fg:#111111;--card:#ffffff;--card2:#e9e9ee;--hover:#e2e2e8;--link:#0645ad;}}
 </style>
 </head>
 <body>

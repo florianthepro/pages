@@ -17,6 +17,8 @@ $profilePicture = '';
 $profileAlt = '';
 $links = [];
 
+$profile_theme='auto'; #'light' (fix hell) | 'dark' (fix dunkel) | 'auto' (dynamisch, folgt System)
+
 $sharedVars=get_defined_vars();
 
 $yaml=<<<'YAML'

@@ -10,6 +10,8 @@ $networking_basedir=dirname((string)($_SERVER['SCRIPT_FILENAME']??__FILE__)); #o
 if(!preg_match('~^([/\\\\]|[A-Za-z]:)~',$networking_datadir))$networking_datadir=$networking_basedir.DIRECTORY_SEPARATOR.$networking_datadir;
 $networking_jsondir=$networking_datadir.DIRECTORY_SEPARATOR.'config.json';
 
+$networking_theme='auto'; #'light' (fix hell) | 'dark' (fix dunkel) | 'auto' (dynamisch, folgt System)
+
 $sharedVars=get_defined_vars();
 
 $yaml=<<<'YAML'

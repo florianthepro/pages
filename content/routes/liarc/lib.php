@@ -20,6 +20,7 @@ function liarc_boot(array $vars): void {
         'title' => (string)($vars['liarc_title'] ?? 'LIARC'),
         'repo' => (string)($vars['liarc_repo'] ?? 'https://raw.githubusercontent.com/florianthepro/pages/main/content'),
         'data' => (string)($vars['liarc_datadir'] ?? (dirname($_SERVER['SCRIPT_FILENAME'] ?? __DIR__).'/liarc-data')),
+        'theme' => in_array((string)($vars['liarc_theme'] ?? 'auto'), ['light','dark','auto'], true) ? (string)($vars['liarc_theme'] ?? 'auto') : 'auto',
     ];
     if (!function_exists('openssl_encrypt') && !function_exists('sodium_crypto_secretbox')) {
         http_response_code(500);
@@ -319,9 +320,11 @@ function liarc_sprite(): string {
 function liarc_head(string $title, bool $bare = false, ?string $activeCat = null): void {
     liarc_headers();
     $authed = liarc_user() !== null;
-    echo '<!doctype html><html lang="'.h(liarc_lang()).'"><head>';
+    $__lt = liarc_cfg('theme');
+    $__lta = $__lt === 'light' ? ' data-theme="light"' : ($__lt === 'dark' ? ' data-theme="dark"' : '');
+    echo '<!doctype html><html lang="'.h(liarc_lang()).'"'.$__lta.'><head>';
     echo '<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">';
-    echo '<meta name="color-scheme" content="dark"><meta name="theme-color" content="#0b0b0f">';
+    echo '<meta name="color-scheme" content="'.($__lt === 'light' ? 'light' : ($__lt === 'dark' ? 'dark' : 'light dark')).'"><meta name="theme-color" content="#0b0b0f">';
     echo '<meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">';
     echo '<title>'.h($title !== '' ? $title.' – '.liarc_cfg('title') : liarc_cfg('title')).'</title>';
     echo '<link rel="icon" type="image/svg+xml" href="'.h(liarc_url('assets', ['f' => 'icon-liarc'])).'">';
