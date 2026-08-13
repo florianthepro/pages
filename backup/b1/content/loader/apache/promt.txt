@@ -1,0 +1,6 @@
+mache .bat welche hersteller(apache usw) scripte zurückgreift und mit folgendem menü:
+[1] Apache — <Installieren/Deinstallieren>
+[2] PHP — <Installieren/Deinstallieren> (nur sichtbar wenn [1] installiert)
+[3] Webserver — <starten/stoppen>
+[4] Config (Untermenü für Einstellungen wie dem pfad aufdem [3] dann startet(default=C:\apache) (nur sichtbar wenn [1] installiert).)
+[0] Beenden
