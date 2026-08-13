@@ -66,7 +66,7 @@ function e(string $value): string {
             object-fit: cover;
             display: block;
             margin: 34px auto 18px;
-            background: var(--card);
+            background: var(--panel);
         }
         h1 {
             font-size: 20px;
@@ -95,7 +95,7 @@ function e(string $value): string {
             width: 100%;
             min-height: 64px;
             border-radius: 16px;
-            background: var(--card2);
+            background: var(--panel2);
             color: var(--fg);
             text-decoration: none;
             display: grid;
@@ -155,9 +155,9 @@ function e(string $value): string {
         }
 </style>
 <style>
-:root{--bg:#000000;--fg:#ffffff;--card:#1a1a1a;--card2:#151515;--hover:#202020;--link:#6ea8fe;}
-:root[data-theme="light"]{--bg:#f5f5f7;--fg:#111111;--card:#ffffff;--card2:#e9e9ee;--hover:#e2e2e8;--link:#0645ad;}
-@media (prefers-color-scheme:light){:root:not([data-theme="dark"]):not([data-theme="light"]){--bg:#f5f5f7;--fg:#111111;--card:#ffffff;--card2:#e9e9ee;--hover:#e2e2e8;--link:#0645ad;}}
+:root{--bg:#000000;--fg:#ffffff;--panel:#1a1a1a;--panel2:#151515;--hover:#202020;--link:#6ea8fe;}
+:root[data-theme="light"]{--bg:#f5f5f7;--fg:#111111;--panel:#ffffff;--panel2:#e9e9ee;--hover:#e2e2e8;--link:#0645ad;}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]):not([data-theme="light"]){--bg:#f5f5f7;--fg:#111111;--panel:#ffffff;--panel2:#e9e9ee;--hover:#e2e2e8;--link:#0645ad;}}
 </style>
 </head>
 <body>
