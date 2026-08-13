@@ -3,7 +3,7 @@ declare(strict_types=1);
 if(PHP_VERSION_ID<80100){http_response_code(500);header('Content-Type: text/plain; charset=utf-8');exit('LIARC benoetigt PHP 8.1 oder neuer (aktuell: '.PHP_VERSION.'). Bitte die PHP-Version im Hosting umstellen.');}
 ///////////////////////
 $liarc_title='LIARC'; #Seitenname
-$liarc_branch='liarc5'; #Repo-Branch
+$liarc_branch='main'; #Repo-Branch
 $liarc_debug=0; #1 = Fehler direkt anzeigen (nur zur Fehlersuche)
 $liarc_datadir=__DIR__.'/liarc-data'; #lokale Nutzerdaten (wird automatisch angelegt und per .htaccess gesperrt)
 #Gruppen/Kategorien/Felder aendern: content/routes/liarc/lib.php (liarc_groups / liarc_categories)

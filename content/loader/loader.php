@@ -85,6 +85,9 @@ $context=stream_context_create([
 ]);
 $data=@file_get_contents($url,false,$context);
 if($data===false)app_fail('Download fehlgeschlagen.',['url'=>$url]);
+$__status=0;
+if(isset($http_response_header)&&is_array($http_response_header)){foreach($http_response_header as $__h){if(preg_match('#^HTTP/\S+\s+(\d{3})#',(string)$__h,$__m))$__status=(int)$__m[1];}}
+if($__status!==0&&($__status<200||$__status>=300))app_fail('Download fehlgeschlagen.',['url'=>$url,'http'=>(string)$__status]);
 return(string)$data;
 }
 function app_cache_dir(): string{
