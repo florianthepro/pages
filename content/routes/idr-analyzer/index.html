@@ -38,6 +38,13 @@ main{padding:26px 22px 80px}
 .kk{color:var(--mut);white-space:nowrap}
 .kv{color:var(--fg);word-break:break-word;overflow-wrap:anywhere}
 .kmore{color:var(--dim);font-size:11px;letter-spacing:.06em;text-align:center}
+.kmeta{margin-top:11px;padding-top:10px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:7px}
+.kline{font-size:12px;line-height:1.55;color:var(--fg);display:flex;gap:12px}
+.klab{flex:0 0 auto;min-width:76px;color:var(--mut);text-transform:uppercase;letter-spacing:.11em;font-size:9.5px;padding-top:3px}
+.ktext{flex:1 1 auto;word-break:break-word;overflow-wrap:anywhere}
+.kline.warn .ktext{color:var(--bad)}
+.warnbox{max-width:88ch;margin:0 auto 16px;border:1px solid var(--bad);padding:9px 14px}
+.warnbox p{margin:0;color:var(--bad);font-size:12px;line-height:1.5}
 .sum{max-width:88ch;margin:0 auto;line-height:1.85;font-size:13.5px}
 .sum p{margin-bottom:19px}
 .sum p:last-child{margin-bottom:0}
@@ -740,23 +747,76 @@ function factsGeneric(o){
   }
   return res;
 }
-function keyPanel(tag,facts){
-  if(!facts.length)return "";
-  var h='<div class="kcard"><div class="ktag">'+esc(tag)+'</div><div class="kgrid">',i;
-  for(i=0;i<facts.length;i++)h+='<div class="kk">'+esc(facts[i][0])+'</div><div class="kv">'+esc(facts[i][1])+'</div>';
-  return h+"</div></div>";
+function relLine(parts){var p=parts.filter(Boolean);return p.length?p.join(" · "):"—"}
+function triageAuth(e){
+  var was=(e.ok===false?"Fehlgeschlagene":"Erfolgreiche")+" Anmeldung bei "+(e.service||"Dienst")+(e.app&&U(e.app)!==U(e.service)?" über "+e.app:"")+".";
+  var mfa=(e.mfareq==="MULTIFACTORAUTHENTICATION"||/mfa/i.test(e.mfadetail))?("MFA ja"+(e.mfaClaim?" (Token-Claim)":"")):"MFA nein";
+  var rel=relLine(["Risiko "+(e.risk&&e.risk!=="NONE"?e.risk.toLowerCase():"keine"),mfa,(e.managed===false&&e.compliant===false?"Gerät unverwaltet":""),(e.geoConflict?"Standorte widersprüchlich":"")]);
+  var warn=e.ok===false||(e.risk&&e.risk!=="NONE")||e.geoConflict;
+  var act;
+  if(e.ok===false)act="Weitere Fehlversuche und Herkunft prüfen; bei Brute-Force Konto sperren.";
+  else if(e.geoConflict||(e.risk&&e.risk!=="NONE"))act="Standort und Gerät verifizieren; im Verdachtsfall Sitzung beenden und Passwort zurücksetzen.";
+  else if(e.managed===false&&e.compliant===false)act="Klären, ob die Anmeldung von einem erlaubten Gerät kam.";
+  else act="Kein akuter Handlungsbedarf.";
+  return {was:was,rel:rel,warn:warn,act:act};
+}
+function triageEvd(e){
+  var fl=befund(e),tags=[],warn=false,i;
+  for(i=0;i<fl.length;i++){var k=fl[i].k;
+    if(k==="tool"){tags.push("auffälliges Werkzeug");warn=true}
+    else if(/^cmd/.test(k)){tags.push("verschleierter Befehl");warn=true}
+    else if(k==="net")tags.push("Verbindung nach außen");
+    else if(k==="pers")tags.push("Persistenz");
+    else if(k==="tmp")tags.push("Start aus Temp");
+    else if(k==="root")tags.push("Systemrechte");}
+  var was=(e.proc?"Prozess "+e.proc+" gestartet":"Endpunkt-Ereignis")+(e.host?" auf "+e.host:"")+(e.user?" durch "+e.user:"")+".";
+  var repName=e.rep==="MALICIOUS"?"schädlich":e.rep==="SUSPICIOUS"?"verdächtig":e.rep==="BENIGN"?"unbedenklich":e.rep?"unbekannt":"";
+  if(e.rep==="MALICIOUS"||e.rep==="SUSPICIOUS")warn=true;
+  var rel=relLine([repName?"Rapid7 "+repName+(e.fam?" ("+e.fam+")":""):"",e.eng?e.eng+" Engines":"",tags.length?tags.join(", "):""]);
+  var act;
+  if(warn)act="Datei/Hash isolieren, Rechner untersuchen, ausgehende Verbindungen prüfen.";
+  else if(fl.length){var f=fragen(e,fl);act=f?f.replace(/^Zu klären ist, /,"Prüfen: "):"Kontext prüfen."}
+  else act="Keine offensichtlichen Auffälligkeiten.";
+  return {was:was,rel:rel,warn:warn,act:act};
+}
+function triageInv(v){
+  var was="Investigation "+q(v.title||tail(v.rrn))+", Status "+(STN[v.status]||(v.status?v.status.toLowerCase():"unbekannt"))+".";
+  var warn=v.prio==="CRITICAL"||v.prio==="HIGH"||v.disp==="MALICIOUS";
+  var rel=relLine([v.prio?"Priorität "+v.prio.toLowerCase():"",v.disp?"Bewertung "+v.disp.toLowerCase():"",(v.alerts&&v.alerts.length?nn(v.alerts.length,"Alarm","Alarme"):"")]);
+  var act=(v.status&&v.status!=="CLOSED")?(v.asg?"Weiter bearbeiten ("+v.asg+").":"Zuweisen und bearbeiten."):"Abgeschlossen.";
+  return {was:was,rel:rel,warn:warn,act:act};
+}
+function triageAlert(a){return {was:"Alarm "+q(a.type||a.title||"—")+".",rel:relLine([a.src?"Quelle "+a.src:"",a.rule?"Regel "+tail(a.rule):""]),warn:true,act:"Alarm im Kontext der Investigation prüfen und triagieren."}}
+function triageGeneric(o){
+  var m=nmap(o),act=S(pick(m,"eventtype","operationname","action","activity","category")),res=S(pick(m,"result","status","outcome","disposition","severity"));
+  return {was:(act||"Ereignis")+(res?" — "+res:"")+".",rel:relLine([res?"Ergebnis "+res:""]),warn:false,act:"Felder prüfen und im Kontext bewerten."};
+}
+function kmeta(tri){
+  if(!tri)return "";
+  var h='<div class="kmeta">';
+  if(tri.was)h+='<div class="kline"><span class="klab">Was</span><span class="ktext">'+esc(tri.was)+'</span></div>';
+  if(tri.rel)h+='<div class="kline'+(tri.warn?' warn':'')+'"><span class="klab">Relevanz</span><span class="ktext">'+esc(tri.rel)+'</span></div>';
+  if(tri.act)h+='<div class="kline"><span class="klab">Aktion</span><span class="ktext">'+esc(tri.act)+'</span></div>';
+  return h+"</div>";
+}
+function keyPanel(tag,facts,tri){
+  if(!facts.length&&!tri)return "";
+  var h='<div class="kcard"><div class="ktag">'+esc(tag)+'</div>',i;
+  if(facts.length){h+='<div class="kgrid">';for(i=0;i<facts.length;i++)h+='<div class="kk">'+esc(facts[i][0])+'</div><div class="kv">'+esc(facts[i][1])+'</div>';h+="</div>"}
+  h+=kmeta(tri);
+  return h+"</div>";
 }
 function renderKeys(){
   var out=[],n=0,MAX=6;
-  function add(tag,f){if(n<MAX&&f.length){out.push(keyPanel(tag,f));n++}}
-  DB.inv.forEach(function(v){add("Investigation",factsInv(v))});
-  DB.auth.forEach(function(e){add("Anmeldung",factsAuth(e))});
-  DB.evd.forEach(function(e){add("Ereignis",factsEvd(e))});
-  if(!DB.inv.length)DB.alr.forEach(function(a){add("Alarm",factsAlert(a))});
+  function add(tag,f,tri){if(n<MAX&&(f.length||tri)){out.push(keyPanel(tag,f,tri));n++}}
+  DB.inv.forEach(function(v){add("Investigation",factsInv(v),triageInv(v))});
+  DB.auth.forEach(function(e){add("Anmeldung",factsAuth(e),triageAuth(e))});
+  DB.evd.forEach(function(e){add("Ereignis",factsEvd(e),triageEvd(e))});
+  if(!DB.inv.length)DB.alr.forEach(function(a){add("Alarm",factsAlert(a),triageAlert(a))});
   if(!out.length){
     var r=DB.root,i;
-    if(Array.isArray(r)){for(i=0;i<r.length&&n<MAX;i++)if(r[i]&&typeof r[i]==="object")add("Eintrag",factsGeneric(r[i]))}
-    else if(r&&typeof r==="object")add("Übersicht",factsGeneric(r));
+    if(Array.isArray(r)){for(i=0;i<r.length&&n<MAX;i++)if(r[i]&&typeof r[i]==="object")add("Eintrag",factsGeneric(r[i]),triageGeneric(r[i]))}
+    else if(r&&typeof r==="object")add("Übersicht",factsGeneric(r),triageGeneric(r));
   }
   var total=DB.inv.length+DB.auth.length+DB.evd.length+(DB.inv.length?0:DB.alr.length);
   if(total>MAX)out.push('<div class="kmore">… und '+(total-MAX)+" weitere</div>");
@@ -764,11 +824,13 @@ function renderKeys(){
 }
 function render(){
   if(!DB)return;
-  var warn=textWarn(),keys=renderKeys();
-  var narr=textInv(DB.inv,DB.alr)+textAuth(DB.auth)+textEvd(DB.evd)+textRest();
-  if(narr){out.innerHTML='<div class="sum">'+narr+warn+"</div>"+keys;return}
+  var warn=textWarn(),warnHtml=warn?'<div class="warnbox">'+warn+"</div>":"";
+  var keys=renderKeys();
+  var known=DB.inv.length||DB.auth.length||DB.evd.length||DB.alr.length;
+  if(known){out.innerHTML=warnHtml+keys;return}
   var g=renderGeneric(DB.root);
-  out.innerHTML=g?'<div class="gen-wrap">'+g+warn+"</div>"+keys:'<div class="empty">KEINE DATEN</div>';
+  if(keys||g){out.innerHTML=warnHtml+keys+(g?'<div class="gen-wrap">'+g+"</div>":"");return}
+  out.innerHTML='<div class="empty">KEINE DATEN</div>';
 }
 
 function analyze(){var t=inp.value;if(t&&t.trim())ingest(t);else empty();}
