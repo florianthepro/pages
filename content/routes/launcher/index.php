@@ -1,9 +1,4 @@
 <?php
-/* Launcher – generische Engine. Enthaelt KEINE Link-/Seiten-Daten:
-   die Kachel-Liste, der Icon-Ordner und das Theme kommen aus der Instanz
-   (via $sharedVars). Die Default-Seite wird aus $launcher_links gebaut;
-   Nutzer koennen sie danach im Browser (localStorage) frei umsortieren/
-   bearbeiten. Icons werden per Name zugeordnet: Dateiname = Kachel-Titel. */
 $launcher_theme = (isset($launcher_theme) && in_array($launcher_theme, ['light','dark'], true)) ? $launcher_theme : 'auto';
 $launcher_title = (isset($launcher_title) && $launcher_title !== '') ? (string)$launcher_title : 'Launcher';
 $launcher_iconbase = isset($launcher_iconbase) ? rtrim((string)$launcher_iconbase, '/') . '/' : '';
@@ -259,7 +254,6 @@ const editorToggle = document.getElementById('editorToggle');
 const resetBtn = document.getElementById('resetBtn');
 const closeSettings = document.getElementById('closeSettings');
 
-/* ---- theme (instanz-default light/dark/auto, danach vom Nutzer umschaltbar) ---- */
 function prefersLight(){ try{ return window.matchMedia('(prefers-color-scheme: light)').matches; }catch(e){ return false; } }
 function applyTheme(mode){
   const el = document.documentElement;
@@ -313,7 +307,6 @@ function resetLauncher(){
   buildAllGrids();
 }
 
-/* ---- dynamische Sektionen aus den Gruppen der Link-Liste ---- */
 function buildSections(){
   const order = Object.keys(allLinks);
   sectionsRoot.innerHTML = '';
@@ -415,7 +408,6 @@ function handleAdd(gid){
   saveLinks(allLinks); buildAllGrids();
 }
 
-/* ---- drag & drop ---- */
 let dragState = null;
 let placeholderEl = null;
 function createPlaceholder(){ const el = document.createElement('div'); el.className = 'placeholder'; return el; }
@@ -471,7 +463,6 @@ function applyReorder(targetGid){
   buildAllGrids();
 }
 
-/* ---- fallback-icons ---- */
 function initialsDataUrl(text, size = 128, bg = '#2b6cb0'){
   const initials = (text || '').split(/\s+/).slice(0, 2).map(s => s[0]).join('').toUpperCase() || '?';
   const canvas = document.createElement('canvas'); canvas.width = size; canvas.height = size;

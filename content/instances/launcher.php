@@ -1,24 +1,11 @@
 <?php
 declare(strict_types=1);
 ///////////////////////
-# Launcher / Dashboard – enthaelt bewusst KEINE echten Firmen-/Intranet-Daten.
-# Die Default-Kacheln werden aus $launcher_links gebaut; Nutzer koennen die Seite
-# danach im Browser frei umsortieren/bearbeiten (localStorage).
-
 $launcher_title='Launcher';
 $launcher_theme='auto'; #'light' (fix hell) | 'dark' (fix dunkel) | 'auto' (dynamisch, folgt System)
-
-# Icon-Ordner: Dateiname = Kachel-Titel (+ $launcher_iconext). Beispiel:
-#   Kachel "GitHub"  ->  content/media/launcher/icons/GitHub.ico
-# Eigene Icons einfach unter diesem Namen ablegen. Fehlt ein Icon, faellt die
-# Engine automatisch auf das Favicon der Seite (bzw. auf Initialen) zurueck.
-$launcher_iconbase='https://raw.githubusercontent.com/florianthepro/pages/main/content/media/launcher/icons/';
+$launcher_iconbase='https://raw.githubusercontent.com/florianthepro/pages/main/content/media/launcher/icons/'; #Icons: Dateiname = Kachel-Titel, sonst Favicon/Initialen
 $launcher_iconext='.ico';
-
-# Link-Liste = nur URL + Gruppe (+ optional Titel/Icon). Die Gruppen werden
-# automatisch zu Dashboard-Sektionen. Dies sind reine Platzhalter-Beispiele
-# (oeffentliche Seiten) – hier durch die eigenen Links ersetzen.
-$launcher_links=[
+$launcher_links=[ #Platzhalter, durch eigene ersetzen (group + url, optional title/icon)
   ['group'=>'general', 'title'=>'GitHub',    'url'=>'https://github.com/'],
   ['group'=>'general', 'title'=>'Wikipedia', 'url'=>'https://www.wikipedia.org/'],
   ['group'=>'general', 'title'=>'Proton',    'url'=>'https://proton.me/'],
