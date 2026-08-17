@@ -23,9 +23,21 @@ button:active{background:#050505}
 button.hot{border-color:#4f4f4f;color:#fff}
 button.arm{border-color:#666;color:#fff;background:#1a1a1a}
 button.err{border-color:var(--bad);color:var(--bad)}
-#sink{position:fixed;left:-9999px;top:0;opacity:0;width:1px;height:1px}
 
-main{padding:34px 22px 80px}
+main{padding:26px 22px 80px}
+.io{max-width:96ch;margin:0 auto 8px}
+#in{display:block;width:100%;height:150px;min-height:64px;max-height:40vh;resize:vertical;box-sizing:border-box;background:var(--pnl);color:var(--fg);border:1px solid var(--line2);padding:12px 14px;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono",monospace;outline:none;overflow:auto;white-space:pre;tab-size:2}
+#in:focus{border-color:#3f3f3f}
+#in::placeholder{color:var(--dim)}
+.bar{display:flex;align-items:center;gap:14px;margin-top:10px}
+.bar #hint{font-size:11px;color:var(--mut);letter-spacing:.06em}
+.keys{max-width:88ch;margin:24px auto 0;display:flex;flex-direction:column;gap:12px}
+.kcard{border:1px solid var(--line);background:var(--pnl);padding:11px 15px}
+.ktag{font-size:10px;letter-spacing:.2em;color:var(--mut);text-transform:uppercase;margin-bottom:9px}
+.kgrid{display:grid;grid-template-columns:max-content 1fr;gap:5px 18px;font-size:12.5px}
+.kk{color:var(--mut);white-space:nowrap}
+.kv{color:var(--fg);word-break:break-word;overflow-wrap:anywhere}
+.kmore{color:var(--dim);font-size:11px;letter-spacing:.06em;text-align:center}
 .sum{max-width:88ch;margin:0 auto;line-height:1.85;font-size:13.5px}
 .sum p{margin-bottom:19px}
 .sum p:last-child{margin-bottom:0}
@@ -48,14 +60,18 @@ main{padding:34px 22px 80px}
 <body>
 <header>
   <div class="brand">IDR ANALYZER</div>
-  <button id="go" class="hot">JSON EINF&Uuml;GEN</button>
 </header>
-<textarea id="sink" tabindex="-1" aria-hidden="true"></textarea>
-<main><div id="out"><div class="empty">STRG + V</div></div></main>
+<main>
+<div class="io">
+<textarea id="in" spellcheck="false" autocomplete="off" placeholder="Rapid7 Investigation-JSON hier einf&uuml;gen&hellip;"></textarea>
+<div class="bar"><button id="go" class="hot">Analysieren</button><span id="hint">Strg + Enter</span></div>
+</div>
+<div id="out"><div class="empty">&mdash;</div></div>
+</main>
 <script>
 (function(){
 "use strict";
-var $=function(s){return document.querySelector(s)},out=$("#out"),go=$("#go"),sink=$("#sink"),meta=$("#meta"),qin=$("#q");
+var $=function(s){return document.querySelector(s)},out=$("#out"),go=$("#go"),inp=$("#in"),hint=$("#hint");
 function hh(){document.documentElement.style.setProperty("--hh",document.querySelector("header").offsetHeight+"px")}
 addEventListener("resize",hh);hh();
 var DB=null,F={prio:{},status:{},disp:{},src:{},asg:{},tag:{},atype:{},asrc:{},rep:{},thr:{},host:{},user:{},proc:{},os:{},fam:{},pc:{}},SORT={k:"created",a:false},SORTE={k:"time",a:false},OPEN={},Q="";
@@ -408,9 +424,9 @@ function ingest(txt){
   DB={inv:invs,alr:alrs,evd:bag.evd.map(mkEvd),auth:bag.auth.map(mkAuth),ev:bag.ev,com:bag.com,att:bag.att,raw:bag.raw,pg:c.pg,fix:FIX,lost:LOST,root:root,known:!!known};
   idle();render();window.scrollTo(0,0);
 }
-function idle(){if(READ){go.textContent="JSON EINFÜGEN";go.className="hot"}else{go.textContent="STRG + V";go.className="arm"}}
-function fail(){go.textContent="× PARSE";go.className="err";setTimeout(idle,1800)}
-function empty(){DB=null;out.innerHTML='<div class="empty">STRG + V</div>';go.textContent="× LEER";go.className="err";setTimeout(idle,1800)}
+function idle(){go.textContent="Analysieren";go.className="hot"}
+function fail(){go.textContent="× Ungültiges JSON";go.className="err";setTimeout(idle,1800)}
+function empty(){DB=null;out.innerHTML='<div class="empty">KEINE DATEN</div>';go.textContent="× Leer";go.className="err";setTimeout(idle,1800)}
 
 function tally(arr,fn){
   var m={},i,v;
@@ -711,45 +727,57 @@ function renderGeneric(root){
   return '<p class="gh">Kein bekanntes Investigation-Schema erkannt – generische Struktur-Ansicht des eingefügten JSON:</p><div class="gen">'+genVal(root,0)+'</div>';
 }
 
+function kf(l,v){return (v!=null&&v!==""&&v!==false)?[l,String(v)]:null}
+function factsInv(v){return [kf("Titel",v.title||tail(v.rrn)),kf("Priorität",v.prio&&cap(v.prio.toLowerCase())),kf("Status",STN[v.status]||(v.status&&v.status.toLowerCase())),kf("Bewertung",v.disp&&v.disp.toLowerCase()),kf("Bearbeiter",v.asg),kf("Erstellt",v.created&&fdt(v.created))].filter(Boolean)}
+function factsAuth(e){return [kf("Nutzer",e.user),kf("Konto",e.account),kf("Dienst",e.service),kf("Ergebnis",e.result&&(e.ok===false?"fehlgeschlagen":"erfolgreich")),kf("IP",e.ip),kf("Ort",[e.city,e.country].filter(Boolean).join(", ")),kf("Zeit",e.time&&fdt(e.time)),kf("Risiko",e.risk&&e.risk!=="NONE"&&e.risk.toLowerCase())].filter(Boolean)}
+function factsEvd(e){return [kf("Rechner",e.host),kf("Nutzer",e.user),kf("Prozess",e.proc),kf("Datei",e.file),kf("Ziel-IP",e.dip),kf("Einstufung",e.rep&&e.rep!=="UNKNOWN"&&e.rep.toLowerCase()),kf("Zeit",e.time&&fdt(e.time))].filter(Boolean)}
+function factsAlert(a){return [kf("Alarm",a.title||a.type),kf("Typ",(a.type&&a.type!==a.title)?a.type:""),kf("Quelle",a.src),kf("Zeit",(a.created||a.first)&&fdt(a.created||a.first))].filter(Boolean)}
+function factsGeneric(o){
+  var m=nmap(o),spec=[["Nutzer",["user","username","userdisplayname","identity","actor"]],["Konto",["account","userprincipalname","email","mail"]],["Rechner",["hostname","assetname","host","computername"]],["Dienst",["service","application","appdisplayname","resourcedisplayname","producer"]],["Aktion",["action","operation","operationname","eventtype","activity","category"]],["Ergebnis",["result","status","outcome","resultsignature","disposition","severity"]],["Quell-IP",["sourceip","srcip","ipaddress","calleripaddress"]],["Ziel-IP",["destinationip","dstip","destinationaddress"]],["Zeit",["timestamp","time","eventedat","createdtime","eventtime","createddatetime"]]],res=[],i,j;
+  for(i=0;i<spec.length;i++){var lab=spec[i][0],ks=spec[i][1],val=null;
+    for(j=0;j<ks.length;j++){var vv=m[ks[j]];if(vv!=null&&typeof vv!=="object"&&String(vv)!==""){val=vv;break}}
+    if(val!=null){if(lab==="Zeit"){var d=D(val);if(d)val=fdt(d)}res.push([lab,String(val)])}
+  }
+  return res;
+}
+function keyPanel(tag,facts){
+  if(!facts.length)return "";
+  var h='<div class="kcard"><div class="ktag">'+esc(tag)+'</div><div class="kgrid">',i;
+  for(i=0;i<facts.length;i++)h+='<div class="kk">'+esc(facts[i][0])+'</div><div class="kv">'+esc(facts[i][1])+'</div>';
+  return h+"</div></div>";
+}
+function renderKeys(){
+  var out=[],n=0,MAX=6;
+  function add(tag,f){if(n<MAX&&f.length){out.push(keyPanel(tag,f));n++}}
+  DB.inv.forEach(function(v){add("Investigation",factsInv(v))});
+  DB.auth.forEach(function(e){add("Anmeldung",factsAuth(e))});
+  DB.evd.forEach(function(e){add("Ereignis",factsEvd(e))});
+  if(!DB.inv.length)DB.alr.forEach(function(a){add("Alarm",factsAlert(a))});
+  if(!out.length){
+    var r=DB.root,i;
+    if(Array.isArray(r)){for(i=0;i<r.length&&n<MAX;i++)if(r[i]&&typeof r[i]==="object")add("Eintrag",factsGeneric(r[i]))}
+    else if(r&&typeof r==="object")add("Übersicht",factsGeneric(r));
+  }
+  var total=DB.inv.length+DB.auth.length+DB.evd.length+(DB.inv.length?0:DB.alr.length);
+  if(total>MAX)out.push('<div class="kmore">… und '+(total-MAX)+" weitere</div>");
+  return out.length?'<div class="keys">'+out.join("")+"</div>":"";
+}
 function render(){
   if(!DB)return;
-  var warn=textWarn();
+  var warn=textWarn(),keys=renderKeys();
   var narr=textInv(DB.inv,DB.alr)+textAuth(DB.auth)+textEvd(DB.evd)+textRest();
-  if(narr){out.innerHTML='<div class="sum">'+narr+warn+"</div>";return}
+  if(narr){out.innerHTML='<div class="sum">'+narr+warn+"</div>"+keys;return}
   var g=renderGeneric(DB.root);
-  out.innerHTML=g?'<div class="gen-wrap">'+g+warn+"</div>":'<div class="empty">STRG + V</div>';
+  out.innerHTML=g?'<div class="gen-wrap">'+g+warn+"</div>"+keys:'<div class="empty">KEINE DATEN</div>';
 }
 
-var SEQ=0,FILE=location.protocol==="file:",READ=!FILE;
-function canRead(){
-  if(!(navigator.clipboard&&navigator.clipboard.readText))return Promise.resolve(false);
-  if(!navigator.permissions||!navigator.permissions.query)return Promise.resolve(!FILE);
-  return navigator.permissions.query({name:"clipboard-read"}).then(
-    function(s){return s.state==="granted"||(s.state==="prompt"&&!FILE)},
-    function(){return !FILE});
-}
-go.addEventListener("click",function(){
-  var my=++SEQ;
-  canRead().then(function(ok){
-    READ=ok;
-    if(my!==SEQ)return;
-    if(!ok)return arm();
-    var done=false,to=setTimeout(function(){if(!done&&my===SEQ)arm()},1200);
-    navigator.clipboard.readText().then(function(t){
-      done=true;clearTimeout(to);if(my!==SEQ)return;
-      if(t&&t.trim())ingest(t);else arm();
-    },function(){done=true;clearTimeout(to);if(my===SEQ)arm()});
-  });
-});
-function arm(){go.textContent="STRG + V";go.className="arm";sink.value="";sink.focus()}
-document.addEventListener("paste",function(e){
-  var t=(e.clipboardData||window.clipboardData);if(!t)return;
-  var v=t.getData("text");if(!v||!v.trim())return;
-  e.preventDefault();SEQ++;sink.value="";ingest(v);
-});
-canRead().then(function(ok){READ=ok;if(!DB)idle()});
-out.innerHTML='<div class="empty">STRG + V</div>';
-sink.focus();
+function analyze(){var t=inp.value;if(t&&t.trim())ingest(t);else empty();}
+go.addEventListener("click",analyze);
+inp.addEventListener("keydown",function(e){if((e.ctrlKey||e.metaKey)&&(e.key==="Enter"||e.keyCode===13)){e.preventDefault();analyze();}});
+inp.addEventListener("paste",function(){setTimeout(analyze,0);});
+idle();
+out.innerHTML='<div class="empty">&mdash;</div>';
+inp.focus();
 })();
 </script>
 </body>
