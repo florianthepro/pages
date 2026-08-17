@@ -18,6 +18,7 @@ $profileAlt = '';
 $links = [];
 
 $profile_theme='auto'; #'light' (fix hell) | 'dark' (fix dunkel) | 'auto' (dynamisch, folgt System)
+$profile_icon='https://raw.githubusercontent.com/florianthepro/pages/main/content/media/profile/index.svg';
 
 $sharedVars=get_defined_vars();
 

@@ -33,6 +33,8 @@ function e(string $value): string {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="<?= e($description) ?>">
     <title><?= e($profileName) ?></title>
+    <?php $__pic = (isset($profile_icon) && $profile_icon !== '') ? $profile_icon : ($profilePicture ?? ''); ?>
+    <?php if ($__pic !== ''): ?><link rel="icon" href="<?= e($__pic) ?>"><?php endif; ?>
     <style>
         * {
             box-sizing: border-box;

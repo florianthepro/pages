@@ -81,7 +81,10 @@ function ladeMetaDaten(string $url): array
     }
 
     if ($icon === "") {
-        $icon = (parse_url($url, PHP_URL_SCHEME) ?: "https") . "://" . (parse_url($url, PHP_URL_HOST) ?: "") . "/favicon.ico";
+        $host = parse_url($url, PHP_URL_HOST);
+        $icon = $host
+            ? (parse_url($url, PHP_URL_SCHEME) ?: "https") . "://" . $host . "/favicon.ico"
+            : "https://raw.githubusercontent.com/florianthepro/pages/main/content/media/iframe-site-viewer/index.svg";
     }
 
     return [$title, $icon];

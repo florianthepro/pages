@@ -5,6 +5,7 @@ const APP_TITLE = 'Netzwerk';
 const SESSION_LIFETIME = 28800;
 const LOGIN_MAX_FAILS = 5;
 const LOGIN_LOCK_SECONDS = 60;
+define('APP_ICON', (isset($netplan_icon) && is_string($netplan_icon)) ? $netplan_icon : '');
 
 const DEVICE_TYPES = [
     'internet'   => ['label' => 'Internet / Provider',    'group' => 'Extern',            'rank' => 0, 'desc' => 'Anschluss nach draußen',       'ip' => false, 'role' => 'Anschluss',        'hint' => 'Glasfaser 1000/200'],
@@ -687,6 +688,7 @@ if (!$hasAuth) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title><?= APP_TITLE ?> · Einrichtung</title>
+<?php if (APP_ICON !== '') { ?><link rel="icon" type="image/svg+xml" href="<?= h(APP_ICON) ?>"><?php } ?>
 <style>
 :root {
     color-scheme: light dark;
@@ -1319,6 +1321,7 @@ if (!$loggedIn) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title><?= APP_TITLE ?> · Anmeldung</title>
+<?php if (APP_ICON !== '') { ?><link rel="icon" type="image/svg+xml" href="<?= h(APP_ICON) ?>"><?php } ?>
 <style>
 :root {
     color-scheme: light dark;

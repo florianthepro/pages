@@ -52,6 +52,7 @@ $__dmTheme = (isset($darkmoney_theme) && in_array($darkmoney_theme, ['light', 'd
     ? $darkmoney_theme
     : 'auto';
 $GLOBALS['DM_THEME'] = $__dmTheme;
+$GLOBALS['DM_ICON'] = (isset($darkmoney_icon) && is_string($darkmoney_icon)) ? $darkmoney_icon : '';
 
 /* --------------------------------------------------------------- bootstrap */
 
@@ -644,7 +645,10 @@ function layout_top(string $title): void {
     $attr   = ($theme === 'light' || $theme === 'dark') ? ' data-theme="' . $theme . '"' : '';
     echo '<!doctype html><html lang="en"' . $attr . '><head><meta charset="utf-8">';
     echo '<meta name="viewport" content="width=device-width, initial-scale=1">';
-    echo '<title>' . h(SMT_BRAND) . ' | ' . h($title) . '</title><style>' . css() . '</style></head><body>';
+    echo '<title>' . h(SMT_BRAND) . ' | ' . h($title) . '</title>';
+    $__dmIcon = $GLOBALS['DM_ICON'] ?? '';
+    if ($__dmIcon !== '') echo '<link rel="icon" type="image/svg+xml" href="' . h($__dmIcon) . '">';
+    echo '<style>' . css() . '</style></head><body>';
     echo '<div class="wrap"><header><span class="logo">[ ' . h(SMT_BRAND) . ' ]</span>';
     echo '<span class="tag">SECURE VALUE NODE</span></header>';
     if ($healed) {
