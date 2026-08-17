@@ -1,0 +1,641 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IDR Investigation Analyzer</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#000;--pnl:#080808;--line:#1b1b1b;--line2:#282828;--fg:#e4e4e4;--mut:#8a8a8a;--dim:#4a4a4a;--bad:#ff3b30}
+html{background:var(--bg)}
+body{background:var(--bg);color:var(--fg);font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono",monospace;-webkit-font-smoothing:antialiased}
+::selection{background:#2a2a2a}
+::-webkit-scrollbar{width:10px}
+::-webkit-scrollbar-thumb{background:#1f1f1f}
+::-webkit-scrollbar-track{background:#000}
+
+header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 22px;border-bottom:1px solid var(--line)}
+.brand{font-size:12px;letter-spacing:.22em;color:#fff}
+button{font:inherit;font-size:12px;background:#0e0e0e;color:var(--fg);border:1px solid var(--line2);padding:7px 16px;cursor:pointer;letter-spacing:.1em}
+button:hover{background:#171717;border-color:#3f3f3f}
+button:active{background:#050505}
+button.hot{border-color:#4f4f4f;color:#fff}
+button.arm{border-color:#666;color:#fff;background:#1a1a1a}
+button.err{border-color:var(--bad);color:var(--bad)}
+#sink{position:fixed;left:-9999px;top:0;opacity:0;width:1px;height:1px}
+
+main{padding:34px 22px 80px}
+.sum{max-width:88ch;margin:0 auto;line-height:1.85;font-size:13.5px}
+.sum p{margin-bottom:19px}
+.sum p:last-child{margin-bottom:0}
+.sum b{font-weight:400;color:#fff}
+.sum .w{color:var(--bad)}
+.empty{display:flex;align-items:center;justify-content:center;height:60vh;color:#262626;font-size:12px;letter-spacing:.34em}
+
+.gen-wrap{max-width:112ch;margin:0 auto;line-height:1.6;font-size:13px}
+.gen-wrap .w{color:var(--bad)}
+.gen-wrap p{margin-bottom:16px}
+.gh{color:var(--mut);font-size:12px;letter-spacing:.03em;margin-bottom:18px;line-height:1.7}
+.gen{width:100%}
+.gobj{margin-left:14px;border-left:1px solid var(--line);padding-left:14px}
+.grow{padding:2px 0;display:flex;gap:14px;align-items:baseline;flex-wrap:wrap}
+.gk{color:var(--mut);flex:0 0 auto;min-width:140px;max-width:300px;word-break:break-word}
+.gv{color:var(--fg);white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;flex:1 1 auto}
+.gm{color:var(--dim)}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">IDR ANALYZER</div>
+  <button id="go" class="hot">JSON EINF&Uuml;GEN</button>
+</header>
+<textarea id="sink" tabindex="-1" aria-hidden="true"></textarea>
+<main><div id="out"><div class="empty">STRG + V</div></div></main>
+<script>
+(function(){
+"use strict";
+var $=function(s){return document.querySelector(s)},out=$("#out"),go=$("#go"),sink=$("#sink"),meta=$("#meta"),qin=$("#q");
+function hh(){document.documentElement.style.setProperty("--hh",document.querySelector("header").offsetHeight+"px")}
+addEventListener("resize",hh);hh();
+var DB=null,F={prio:{},status:{},disp:{},src:{},asg:{},tag:{},atype:{},asrc:{},rep:{},thr:{},host:{},user:{},proc:{},os:{},fam:{},pc:{}},SORT={k:"created",a:false},SORTE={k:"time",a:false},OPEN={},Q="";
+var EDIM=[["rep","rep"],["thr","thr"],["host","host"],["user","user"],["proc","proc"],["os","os"],["fam","famx"],["pc","pcx"]];
+
+function esc(x){return String(x==null?"":x).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
+function S(x){return x==null?"":typeof x==="string"?x:typeof x==="number"||typeof x==="boolean"?String(x):""}
+function U(x){var v=S(x).trim();return v?v.toUpperCase().replace(/[\s-]+/g,"_"):""}
+function D(x){if(!x&&x!==0)return null;if(typeof x==="number")return new Date(x<1e11?x*1000:x);var t=Date.parse(x);return isNaN(t)?null:new Date(t)}
+function P(n){return String(n).padStart(2,"0")}
+function fdt(x){return x?x.getFullYear()+"-"+P(x.getMonth()+1)+"-"+P(x.getDate())+" "+P(x.getHours())+":"+P(x.getMinutes()):"—"}
+function fd(x){return x?x.getFullYear()+"-"+P(x.getMonth()+1)+"-"+P(x.getDate()):"—"}
+function dur(ms){if(ms==null||!isFinite(ms)||ms<0)return "—";var m=Math.round(ms/6e4);if(m<60)return m+"m";var h=Math.floor(m/60);if(h<48)return h+"h"+(m%60?" "+(m%60)+"m":"");var d=Math.floor(h/24);return d+"d"+(h%24?" "+(h%24)+"h":"")}
+function tail(r){var v=S(r);var i=v.lastIndexOf(":");return i<0?v:v.slice(i+1)}
+function nz(v){return v||"—"}
+
+var FIX=0,LOST=0;
+function ctl(t){
+  if(!/[\x00-\x08\x0b\x0c\x0e-\x1f]|"[^"\\]*(\\.[^"\\]*)*[\n\r]/.test(t))return t;
+  var o=[],q=false,esq=false;
+  for(var i=0;i<t.length;i++){var c=t[i],n=t.charCodeAt(i);
+    if(q){
+      if(esq){o.push(c);esq=false;continue}
+      if(c==="\\"){o.push(c);esq=true;continue}
+      if(c==='"'){q=false;o.push(c);continue}
+      if(n<32){o.push(n===10?"\\n":n===13?"\\r":n===9?"\\t":" ");continue}
+      o.push(c);continue}
+    if(c==='"')q=true;
+    o.push(c)}
+  return o.join("");
+}
+function commas(t){
+  if(t.indexOf(",")<0)return t;
+  var o=[],q=false,esq=false,prev="",i,c;
+  for(i=0;i<t.length;i++){c=t[i];
+    if(q){o.push(c);if(esq){esq=false}else if(c==="\\"){esq=true}else if(c==='"'){q=false;prev='"'}continue}
+    if(c==='"'){q=true;o.push(c);continue}
+    if(c===","){
+      if(prev==="{"||prev==="["||prev===","){continue}
+      var j=i+1;while(j<t.length&&/\s/.test(t[j]))j++;
+      var nx=t[j];
+      if(nx==="}"||nx==="]"||nx===","||j>=t.length)continue;
+      o.push(c);prev=",";continue}
+    o.push(c);
+    if(!/\s/.test(c))prev=c;
+  }
+  return o.join("");
+}
+function fixups(t){
+  var a=[],b;
+  b=t.replace(/[\u201c\u201d\u201e\u201f\u2033]/g,'"').replace(/[\u2018\u2019\u201a\u201b\u2032]/g,"'")
+     .replace(/[\u00a0\u202f\u2007]/g," ").replace(/[\u200b-\u200f\u2028\u2029\ufeff]/g,"");
+  if(b!==t)a.push(b);else b=t;
+  a.push(b=commas(b));
+  a.push(b=ctl(b));
+  a.push(b=commas(b));
+  a.push(b.replace(/\/\*[\s\S]*?\*\//g,"").replace(/(^|[^:"'\\])\/\/[^\n\r]*/g,"$1"));
+  a.push(b.replace(/(^|[[{,:\s])(NaN|-?Infinity)(\s*[,}\]]|$)/g,"$1null$3"));
+  a.push(b.replace(/(^|[[{,:\s])None(\s*[,}\]]|$)/g,"$1null$2").replace(/(^|[[{,:\s])True(\s*[,}\]]|$)/g,"$1true$2").replace(/(^|[[{,:\s])False(\s*[,}\]]|$)/g,"$1false$2"));
+  if(/&quot;|&amp;|&lt;/.test(b))a.push(b.replace(/&quot;/g,'"').replace(/&#39;|&apos;/g,"'").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&amp;/g,"&"));
+  if(b.indexOf('"')<0&&b.indexOf("'")>=0)a.push(b.replace(/'/g,'"'));
+  return a;
+}
+function tryParse(t){
+  try{return{v:JSON.parse(t)}}catch(e){}
+  var f=fixups(t);
+  for(var i=0;i<f.length;i++){try{var v=JSON.parse(f[i]);FIX++;return{v:v}}catch(e){}}
+  return null;
+}
+function closers(t,from){
+  var st=[],q=false,esq=false,cuts=[],i,c;
+  for(i=from;i<t.length;i++){c=t[i];
+    if(q){if(esq){esq=false}else if(c==="\\"){esq=true}else if(c==='"'){q=false;push(i+1)}continue}
+    if(c==='"'){q=true;continue}
+    if(c==="{"||c==="[")st.push(c==="{"?"}":"]");
+    else if(c==="}"||c==="]"){st.pop();push(i+1)}
+    else if(c===",")push(i);
+  }
+  function push(p){cuts.push({p:p,c:st.slice().reverse().join("")});if(cuts.length>48)cuts.shift()}
+  return {open:st.length>0||q,q:q,end:st.slice().reverse().join(""),cuts:cuts};
+}
+function salvage(t,from){
+  var s=closers(t,from);
+  if(!s.open)return null;
+  var cand=[t.slice(from)+(s.q?'"':"")+s.end],i,was=FIX;
+  for(i=s.cuts.length-1;i>=0;i--)cand.push(t.slice(from,s.cuts[i].p)+s.cuts[i].c);
+  for(i=0;i<cand.length;i++){var r=tryParse(cand[i]);if(r){if(FIX===was)FIX++;return r.v}}
+  return null;
+}
+function full(v){
+  if(v==null||typeof v!=="object")return false;
+  if(Array.isArray(v))return v.length>0;
+  for(var k in v)if(OWN.call(v,k))return true;
+  return false;
+}
+function scan(t){
+  var res=[],dep=0,st=-1,q=false,esq=false,last=0;
+  for(var i=0;i<t.length;i++){var c=t[i];
+    if(q){if(esq){esq=false}else if(c==="\\"){esq=true}else if(c==='"'){q=false}continue}
+    if(c==='"'){q=true;continue}
+    if(c==="{"||c==="["){if(dep===0)st=i;dep++}
+    else if(c==="}"||c==="]"){dep--;
+      if(dep===0&&st>=0){var r=tryParse(t.slice(st,i+1));if(r&&full(r.v))res.push(r.v);else LOST++;st=-1;last=i+1}
+      else if(dep<0){dep=0}}
+  }
+  var from=st>=0&&st>=last?st:-1;
+  if(from<0){var rest=t.slice(last),ix=rest.search(/[{[]/);if(ix>=0)from=last+ix}
+  if(from>=0){var sv=salvage(t,from);if(full(sv))res.push(sv);else LOST++}
+  return res;
+}
+function parse(txt){
+  FIX=0;LOST=0;
+  var t=String(txt).replace(/^\ufeff/,"").trim();
+  if(!t)throw 0;
+  var r=tryParse(t);
+  if(r)return r.v;
+  var ln=t.split(/\r?\n/),a=[],bad=0,strict=0,i,x,keep=FIX,last=-1;
+  for(i=ln.length-1;i>=0;i--)if(ln[i].trim()){last=i;break}
+  for(i=0;i<ln.length&&!bad;i++){x=ln[i].trim();if(!x)continue;
+    if(x.charAt(0)!=="{"&&x.charAt(0)!=="["){bad++;break}
+    var p=tryParse(x);
+    if(p&&full(p.v)){a.push(p.v);strict++;continue}
+    if(i===last){var sv=salvage(x,0);if(full(sv)){a.push(sv);continue}}
+    bad++}
+  if(strict&&a.length&&!bad)return a;
+  FIX=keep;a=null;
+  var sc=scan(t);
+  if(sc.length)return sc.length===1?sc[0]:sc;
+  throw 0;
+}
+
+var OWN=Object.prototype.hasOwnProperty;
+function ob(x){return x!=null&&typeof x==="object"&&!Array.isArray(x)}
+function sub(x){return ob(x)?nmap(x):{}}
+function nkey(k){return k.toLowerCase().replace(/[^a-z0-9]/g,"")}
+function nmap(o){
+  if(o.__n)return o.__n;
+  var m={};for(var k in o){if(!OWN.call(o,k))continue;var n=nkey(k);if(!(n in m))m[n]=o[k]}
+  try{Object.defineProperty(o,"__n",{value:m,enumerable:false})}catch(e){}
+  return m;
+}
+function pick(m){for(var i=1;i<arguments.length;i++){var v=m[arguments[i]];if(v!=null&&v!=="")return v}return null}
+function has(m){for(var i=1;i<arguments.length;i++)if(m[arguments[i]]!=null)return true;return false}
+function kind(o){
+  var m=nmap(o),r=S(m.rrn);
+  if(/:investigation:/i.test(r))return "inv";
+  if(/:evidence:/i.test(r))return "ev";
+  if(/:comment:/i.test(r))return "com";
+  if(/:attachment:/i.test(r))return "att";
+  if((m.alerts!=null||m.investigationalerts!=null)&&has(m,"title","name","status","state","investigationid","investigationtitle"))return "inv";
+  if(/:alert/i.test(r)&&has(m,"alerttype","detectionrulerrn","alertsource"))return "alr";
+  if(has(m,"alerttype","alerttypedescription","detectionrulerrn","rulerrn","alertsource","agentactiontaken","applicableclosereasons","firsteventtime","latesteventtime","rulename"))return "alr";
+  if(has(m,"eventedat")||(has(m,"eventtype")&&has(m,"externalsource")))return "ev";
+  if(has(m,"body")&&has(m,"creator"))return "com";
+  if(has(m,"filename")&&has(m,"mimetype"))return "att";
+  if(ob(m.process)||ob(m.parentprocess)||has(m,"r7hostid","endpointid")||(ob(m.r7context)&&has(m,"entryid"))||
+     (has(m,"hostname","assetname")&&(ob(m.file)||has(m,"sourceaddress","destinationaddress","sourceip","destinationip"))))return "evd";
+  if(has(m,"disposition","firstalerttime","latestalerttime","responsibility","investigationtitle","investigationid","investigationstatus","investigationrrn"))return "inv";
+  if(has(m,"status","state")&&has(m,"priority","severity")&&has(m,"title","name","rrn","id"))return "inv";
+  if(has(m,"status","state")&&has(m,"title","name")&&has(m,"createdtime","createdat","source","assignee","assignedto"))return "inv";
+  if(has(m,"sourcedata")||(has(m,"timestamp")&&has(m,"hostname")))return "raw";
+  return null;
+}
+function collect(root){
+  var bag={inv:[],alr:[],ev:[],com:[],att:[],raw:[],evd:[]},pg=null,seen=new Set(),unwrap=0;
+  (function walk(n,dp){
+    if(n==null||dp>12)return;
+    if(Array.isArray(n)){for(var i=0;i<n.length;i++)walk(n[i],dp+1);return}
+    if(typeof n!=="object")return;
+    if(seen.has(n))return; seen.add(n);
+    var md=nmap(n).metadata;
+    if(ob(md)&&!pg){var mm=nmap(md);if(mm.totaldata!=null||mm.totalpages!=null)pg=mm}
+    var k=kind(n);
+    if(k)bag[k].push(n);
+    if(k&&k!=="inv"&&k!=="ev")return;
+    for(var p in n){if(!OWN.call(n,p))continue;var v=n[p];
+      if(v&&typeof v==="object"){walk(v,dp+1);continue}
+      if(typeof v==="string"&&unwrap<400&&v.length>20&&v.length<300000){
+        var s=v.trim();
+        if((s.charAt(0)==="{"&&s.charAt(s.length-1)==="}")||(s.charAt(0)==="["&&s.charAt(s.length-1)==="]")){
+          var r=tryParse(s);
+          if(r&&full(r.v)){unwrap++;walk(r.v,dp+1)}}}}
+  })(root,0);
+  return {bag:bag,pg:pg};
+}
+
+function mkAlert(o,parent){
+  var m=nmap(o);
+  return {raw:o,
+    title:S(pick(m,"title","name","alerttype","alerttypedescription","type","rulename")),
+    type:S(pick(m,"alerttype","type","alerttypedescription","typedescription","rulename","name","title")),
+    desc:S(pick(m,"alerttypedescription","typedescription","description")),
+    src:S(pick(m,"alertsource","externalsource","source","producer")),
+    rule:S(pick(m,"rulename","detectionrulerrn","rulerrn","detectionrule")),
+    id:S(pick(m,"id","alertid","rrn","alertrrn")),
+    action:S(pick(m,"agentactiontaken","actiontaken","action")),
+    created:D(pick(m,"createdtime","createdat","created","timestamp")),
+    first:D(pick(m,"firsteventtime","firsteventat","starttime")),
+    last:D(pick(m,"latesteventtime","lasteventtime","endtime")),
+    pi:parent};
+}
+function person(x){
+  if(x==null)return{n:"",e:""};
+  if(typeof x!=="object")return{n:S(x),e:/@/.test(S(x))?S(x):""};
+  if(Array.isArray(x))return x.length?person(x[0]):{n:"",e:""};
+  var m=nmap(x);return{n:S(pick(m,"name","displayname","username","fullname","email")),e:S(pick(m,"email","mail"))};
+}
+function mkInv(o,i){
+  var m=nmap(o),a=person(pick(m,"assignee","assignedto","owner","analyst"));
+  var v={idx:i,raw:o,
+    title:S(pick(m,"title","investigationtitle","name","investigationname","summary")),
+    rrn:S(pick(m,"rrn","investigationrrn","id","investigationid")),
+    id:S(pick(m,"id","investigationid","rrn")),
+    prio:U(pick(m,"priority","investigationpriority","severity")),
+    status:U(pick(m,"status","investigationstatus","state")),
+    disp:U(pick(m,"disposition","investigationdisposition")),
+    src:U(pick(m,"source","investigationsource","createdvia","origin")),
+    resp:U(pick(m,"responsibility")),
+    org:S(pick(m,"organizationid","orgid","organization")),
+    asg:a.n||a.e,email:a.e,
+    created:D(pick(m,"createdtime","investigationcreatedtime","createdat","created","opentime")),
+    acc:D(pick(m,"lastaccessed","lastaccessedtime","updatedat","lastupdated","closedtime","closetime")),
+    fa:D(pick(m,"firstalerttime","firstalertat")),
+    la:D(pick(m,"latestalerttime","lastalerttime","mostrecentalerttime")),
+    tags:[],url:S(pick(m,"entityurl","url","link")),
+    alerts:[]};
+  var tg=pick(m,"tags","labels");
+  if(Array.isArray(tg))v.tags=tg.map(function(t){return t&&typeof t==="object"?S(pick(nmap(t),"name","tag","value")):S(t)}).filter(Boolean);
+  else if(tg)v.tags=[S(tg)].filter(Boolean);
+  var pools=["alerts","alert","investigationalerts","productalerts","productalert","detections"];
+  for(var p=0;p<pools.length;p++){var x=m[pools[p]];
+    if(Array.isArray(x)){for(var j=0;j<x.length;j++)if(x[j]&&typeof x[j]==="object")v.alerts.push(mkAlert(x[j],i))}
+    else if(x&&typeof x==="object")v.alerts.push(mkAlert(x,i));}
+  v.dwell=v.created&&v.status==="CLOSED"&&v.acc?v.acc-v.created:null;
+  v.age=v.created?Date.now()-v.created:null;
+  v.blob=[v.title,v.rrn,v.asg,v.email,v.prio,v.status,v.disp,v.src,v.tags.join(" "),v.alerts.map(function(z){return z.title+" "+z.type+" "+z.src}).join(" ")].join(" ").toLowerCase();
+  return v;
+}
+
+function mkEvd(o,i){
+  var m=nmap(o),
+      pr=sub(m.process||m.proc),pp=sub(m.parentprocess||m.parent),
+      ef=sub(pr.exefile||pr.file),hs=sub(ef.hashes||pr.hashes),
+      hr=sub(pr.hashreputation||m.hashreputation),cl=sub(hr.classification),
+      ctx=sub(m.r7context),as=sub(ctx.asset||m.asset),us=sub(ctx.user||m.user),
+      fi=sub(m.file),fh=sub(fi.hashes),
+      ppf=sub(pp.exefile),pph=sub(ppf.hashes);
+  var v={idx:i,raw:o,
+    time:D(pick(pr,"starttime","createdtime")||pick(m,"timestamp","eventedat","time","createdtime","detectedtime")),
+    host:S(pick(m,"hostname","assetname","host","computername")||pick(as,"name")||pick(m,"endpointid","r7hostid")),
+    os:U(pick(m,"ostype","os","platform")),
+    user:S(pick(pr,"username","euidname","ruidname")||pick(m,"username","user","account","accountname")||pick(us,"name","username")),
+    proc:S(pick(pr,"name","processname")||pick(m,"processname")),
+    pid:S(pick(pr,"pid","processid")),
+    cmd:S(pick(pr,"cmdline","commandline")||pick(m,"cmdline","commandline")),
+    exe:S(pick(pr,"exepath","path","imagepath")),
+    cwd:S(pick(pr,"workingdir","cwd")),
+    sha:S(pick(hs,"sha256")||pick(fh,"sha256")).toLowerCase(),
+    md5:S(pick(hs,"md5")||pick(fh,"md5")).toLowerCase(),
+    sha1:S(pick(hs,"sha1")||pick(fh,"sha1")).toLowerCase(),
+    rep:U(pick(hr,"reputation")),
+    thr:U(pick(hr,"threatlevel")),
+    rel:U(pick(hr,"reliability")),
+    fam:S(pick(cl,"familyname","family")),
+    cls:S(pick(cl,"type")),
+    plat:S(pick(cl,"platform")),
+    eng:hr.enginematch!=null?S(hr.enginematch)+"/"+S(hr.enginecount):"",
+    par:S(pick(pp,"name")),
+    ppid:S(pick(pp,"pid")||pick(pr,"ppid")),
+    pcmd:S(pick(pp,"cmdline","commandline")),
+    pexe:S(pick(pp,"exepath","path")),
+    psha:S(pick(pph,"sha256")).toLowerCase(),
+    file:S(pick(fi,"path","name")),
+    sip:S(pick(m,"sourceaddress","sourceip","srcip")),
+    dip:S(pick(m,"destinationaddress","destinationip","dstip")),
+    dport:S(pick(m,"destinationport","dstport","port")),
+    rrn:S(pick(as,"rrn")||pick(m,"rrn")),
+    id:S(pick(m,"entryid","id","eventid")),
+    vendor:S(pick(m,"endpointvendor","vendor"))};
+  v.famx=[v.fam,v.cls,v.plat].filter(Boolean).join(" / ");
+  v.pcx=v.par?v.par+" → "+(v.proc||"—"):"";
+  v.blob=[v.host,v.user,v.proc,v.cmd,v.exe,v.par,v.pcmd,v.rep,v.thr,v.fam,v.cls,v.sha,v.md5,v.sha1,v.file,v.sip,v.dip,v.os,v.id,v.rrn].join(" ").toLowerCase();
+  return v;
+}
+function priv(ip){var p=ip.split(".").map(Number);
+  if(p.some(function(n){return isNaN(n)||n>255}))return null;
+  if(p[0]===10||p[0]===127||(p[0]===192&&p[1]===168)||(p[0]===172&&p[1]>=16&&p[1]<=31)||(p[0]===169&&p[1]===254)||p[0]===0||p[0]>=224)return true;
+  return false;
+}
+function hasData(v){
+  if(v==null)return false;
+  if(typeof v!=="object")return v!=="";
+  if(Array.isArray(v)){for(var i=0;i<v.length;i++)if(hasData(v[i]))return true;return false}
+  for(var k in v)if(OWN.call(v,k)&&k!=="__n"&&hasData(v[k]))return true;
+  return false;
+}
+function ingest(txt){
+  var root;
+  try{root=parse(txt)}catch(e){return fail()}
+  var c=collect(root),bag=c.bag;
+  var known=bag.inv.length||bag.alr.length||bag.ev.length||bag.com.length||bag.raw.length||bag.att.length||bag.evd.length;
+  if(!known&&!hasData(root))return empty();
+  var invs=bag.inv.map(mkInv),alrs=[],nested=new Set(),i,j;
+  for(i=0;i<invs.length;i++)for(j=0;j<invs[i].alerts.length;j++){alrs.push(invs[i].alerts[j]);nested.add(invs[i].alerts[j].raw)}
+  for(i=0;i<bag.alr.length;i++)if(!nested.has(bag.alr[i]))alrs.push(mkAlert(bag.alr[i],null));
+  DB={inv:invs,alr:alrs,evd:bag.evd.map(mkEvd),ev:bag.ev,com:bag.com,att:bag.att,raw:bag.raw,pg:c.pg,fix:FIX,lost:LOST,root:root,known:!!known};
+  idle();render();window.scrollTo(0,0);
+}
+function idle(){if(READ){go.textContent="JSON EINFÜGEN";go.className="hot"}else{go.textContent="STRG + V";go.className="arm"}}
+function fail(){go.textContent="× PARSE";go.className="err";setTimeout(idle,1800)}
+function empty(){DB=null;out.innerHTML='<div class="empty">STRG + V</div>';go.textContent="× LEER";go.className="err";setTimeout(idle,1800)}
+
+function tally(arr,fn){
+  var m={},i,v;
+  for(i=0;i<arr.length;i++){var ks=fn(arr[i]);if(!Array.isArray(ks))ks=[ks];
+    for(var j=0;j<ks.length;j++){v=ks[j];if(v)m[v]=(m[v]||0)+1}}
+  return Object.keys(m).map(function(k){return{k:k,n:m[k]}}).sort(function(a,b){return b.n-a.n||(a.k<b.k?-1:1)});
+}
+var ORD={prio:["CRITICAL","HIGH","MEDIUM","LOW","UNSPECIFIED"]};
+var NUM=["null","ein","zwei","drei","vier","fünf","sechs","sieben","acht","neun","zehn","elf","zwölf"];
+function nw(n,f){return n<NUM.length?(n===1&&f?"eine":NUM[n]):String(n)}
+function nn(n,one,many,f){return n===1?(f?"eine ":"ein ")+one:nw(n,f)+" "+many}
+function az(n,s1,pl){return n===1?s1:nw(n)+" "+pl}
+var OSN={DARWIN:"macOS",MAC_OS:"macOS",MACOS:"macOS",WINDOWS:"Windows",WIN:"Windows",LINUX:"Linux"};
+function P2(n){return String(n).padStart(2,"0")}
+function dstr(d){return d?P2(d.getDate())+"."+P2(d.getMonth()+1)+"."+d.getFullYear():""}
+function tstr(d){return d?P2(d.getHours())+":"+P2(d.getMinutes()):""}
+function when(d){return d?"am "+dstr(d)+" um "+tstr(d)+" Uhr":""}
+function seit(ms){
+  if(ms==null||!isFinite(ms)||ms<0)return "";
+  var m=Math.round(ms/6e4);
+  if(m<60)return "seit "+nn(m,"Minute","Minuten",true);
+  var h=Math.round(m/60);
+  if(h<36)return "seit "+nn(h,"Stunde","Stunden",true);
+  var d=Math.round(h/24);
+  return "seit "+nn(d,"Tag","Tagen");
+}
+function liste(a,und){
+  if(!a.length)return "";
+  if(a.length===1)return a[0];
+  return a.slice(0,-1).join(", ")+" "+(und||"und")+" "+a[a.length-1];
+}
+function q(s){return "\u201e"+s+"\u201c"}
+function cap(s){return s?s.charAt(0).toUpperCase()+s.slice(1):s}
+var STN={OPEN:"offen",INVESTIGATING:"in Bearbeitung",WAITING:"wartend",CLOSED:"abgeschlossen"};
+function pp(t){return "<p>"+t+"</p>"}
+
+var TOOL=[
+ [/^(ngrok|cloudflared|frpc|frps|chisel|localtunnel|pagekite|zrok)(\.exe)?$/i,
+  "baut einen Tunnel ins Internet auf, über den Dienste dieses Rechners von außen erreichbar werden. Das umgeht die Firewall."],
+ [/^(teamviewer|anydesk|rustdesk|screenconnect|splashtop|logmein|atera|ultravnc|vncserver)/i,
+  "ist eine Fernwartungs-Software. Damit kann jemand von außen den Rechner bedienen."],
+ [/^(mimikatz|lazagne|procdump|secretsdump|pwdump)/i,
+  "dient dazu, Passwörter und Anmeldedaten aus dem Rechner auszulesen. Dafür gibt es im Normalbetrieb keinen Grund."],
+ [/^(certutil|bitsadmin|mshta|regsvr32|rundll32|wmic|msbuild|installutil|cscript|wscript)(\.exe)?$/i,
+  "ist zwar ein Windows-Bordmittel, wird aber häufig zweckentfremdet, um Schadcode nachzuladen und auszuführen."],
+ [/^(nc|ncat|netcat|socat)(\.exe)?$/i,
+  "ist ein Netzwerk-Werkzeug, mit dem sich auch Fernsteuerungs-Verbindungen nach außen aufbauen lassen."],
+ [/^(psexec|paexec|psexesvc)(\.exe)?$/i,
+  "führt Befehle auf anderen Rechnern im Netz aus und wird häufig zur Ausbreitung genutzt."]
+];
+var CMDF=[
+ [/-enc(odedcommand)?\s|frombase64string|::frombase64/i,"Die Kommandozeile ist kodiert, der eigentliche Befehl also absichtlich unlesbar gemacht."],
+ [/-w(indowstyle)?\s+hidden|-nop\b|-noprofile/i,"Der Aufruf ist so gebaut, dass kein Fenster erscheint."],
+ [/iex\s|invoke-expression|downloadstring/i,"Der Befehl lädt Code aus dem Netz und führt ihn sofort aus, ohne ihn zu speichern."],
+ [/(curl|wget)\s[^|]*\|\s*(ba)?sh/i,"Der Befehl lädt ein Skript aus dem Netz und führt es sofort aus."],
+ [/\/dev\/tcp\//i,"Der Befehl enthält ein typisches Muster für eine Rückwärts-Verbindung zu einem fremden Rechner."]
+];
+var TMPP=/(^|[\/\\])(tmp|temp|downloads|public|programdata)([\/\\]|$)/i;
+var PERS=/launchagents|launchdaemons|[\/\\]cron|\\run\\|\\runonce\\|startup/i;
+
+function befund(e){
+  var o=[],i,pn=S(e.proc),cm=S(e.cmd);
+  for(i=0;i<TOOL.length;i++)if(TOOL[i][0].test(pn)){o.push({k:"tool",t:pn+" "+TOOL[i][1],w:1});break}
+  for(i=0;i<CMDF.length;i++)if(CMDF[i][0].test(cm)){o.push({k:"cmd"+i,t:CMDF[i][1],w:1});break}
+  if(e.exe&&TMPP.test(e.exe))o.push({k:"tmp",t:"Das Programm liegt in einem temporären oder Download-Verzeichnis statt dort, wo installierte Software normalerweise liegt.",w:1});
+  if(e.file&&PERS.test(e.file))o.push({k:"pers",t:"Es wird in einen Autostart-Pfad geschrieben. Das sorgt dafür, dass etwas nach einem Neustart wieder anläuft.",w:1});
+  if(/^(root|system)$/i.test(S(e.user)))o.push({k:"root",t:"Der Vorgang lief mit vollen Systemrechten.",w:1});
+  if(e.dip&&priv(e.dip)===false)o.push({k:"net",t:"Es ging eine Verbindung nach außen zu "+e.dip+(e.dport?", Port "+e.dport:"")+".",w:1});
+  return o;
+}
+function repSatz(e){
+  if(!e.rep)return "";
+  var m=/^(\d+)\/(\d+)$/.exec(e.eng),hit=m?+m[1]:null,all=m?+m[2]:null,schwach=(hit!=null&&all&&hit/all<0.35)||e.rel==="LOW";
+  var was=e.rep==="MALICIOUS"?"als schädlich":e.rep==="SUSPICIOUS"?"als verdächtig":e.rep==="BENIGN"?"als unbedenklich":"als unbekannt";
+  if(e.rep==="BENIGN"||e.rep==="UNKNOWN"||e.rep==="GOOD")return "Die Datei ist "+was+" eingestuft.";
+  var t="Rapid7 stuft die Datei "+was+" ein";
+  if(e.fam||e.cls)t+=" und ordnet sie "+(e.cls?e.cls.toLowerCase().indexOf("trojan")===0?"dem Trojaner":"der Kategorie "+e.cls:"der Familie")+" "+(e.fam||e.cls)+" zu";
+  t+=".";
+  if(hit!=null&&all)t+=" Von "+all+" Prüf-Engines schlagen allerdings nur "+hit+" an";
+  if(schwach){
+    t+=(hit!=null&&all?", und ":" Allerdings ");
+    t+="Rapid7 bewertet die eigene Einschätzung selbst als wenig verlässlich. Ein Fehlalarm ist gut möglich.";
+  }else if(hit!=null&&all)t+=".";
+  return t;
+}
+function fragen(e,fl){
+  var f=[],has=function(k){for(var i=0;i<fl.length;i++)if(fl[i].k===k)return true;return false};
+  if(has("tool"))f.push("ob "+e.proc+" für "+(e.user||"diesen Nutzer")+" freigegeben ist und ob die Verbindung noch läuft");
+  if(has("tmp"))f.push("woher die Datei stammt");
+  if(has("pers"))f.push("ob der Autostart-Eintrag gewollt ist");
+  if(has("root"))f.push("wer den Vorgang mit Systemrechten ausgelöst hat");
+  if(has("net"))f.push("wohin die Verbindung ging");
+  if(!f.length&&e.rep==="MALICIOUS")f.push("ob die Datei auf weiteren Rechnern liegt");
+  return f.length?"Zu klären ist, "+liste(f,"sowie")+".":"";
+}
+
+function textEvd(l){
+  if(!l.length)return "";
+  var h="",i;
+  if(l.length===1){
+    var e=l[0],s="";
+    s="Auf dem Rechner <b>"+esc(e.host||"(ohne Namen)")+"</b>"+(OSN[e.os]?" ("+OSN[e.os]+")":"");
+    if(e.user)s+=" hat der Nutzer <b>"+esc(e.user)+"</b>";
+    else s+=" wurde";
+    if(e.time)s+=" "+esc(when(e.time));
+    if(e.proc)s+=(e.user?" das Programm <b>":" das Programm <b>")+esc(e.proc)+"</b>"+(e.user?" gestartet":" gestartet");
+    else s+=" ein Ereignis ausgelöst";
+    if(e.par)s+=", aufgerufen aus "+esc(e.par);
+    s+=".";
+    if(e.cmd)s+=" Der Befehl lautete "+esc(q(e.cmd))+".";
+    h+=pp(s);
+    var fl=befund(e),tool=fl.filter(function(x){return x.k==="tool"}),rest=fl.filter(function(x){return x.k!=="tool"});
+    if(tool.length)h+=pp(esc(tool[0].t));
+    var rs=repSatz(e);
+    if(rs)h+=pp(esc(rs));
+    if(rest.length)h+=pp(esc(rest.map(function(x){return x.t}).join(" ")));
+    if(!tool.length&&!rs&&!rest.length)h+=pp("Auffälligkeiten sind aus den Daten nicht erkennbar.");
+    var fr=fragen(e,fl);
+    if(fr)h+=pp("<b>"+esc(fr)+"</b>");
+    return h;
+  }
+  var uq=function(k){var s={};for(var j=0;j<l.length;j++)if(l[j][k])s[l[j][k]]=1;return Object.keys(s).length},
+      ds=l.map(function(x){return x.time}).filter(Boolean),
+      mn=ds.length?new Date(Math.min.apply(null,ds)):null,mx=ds.length?new Date(Math.max.apply(null,ds)):null,
+      bad=l.filter(function(x){return x.rep==="MALICIOUS"||x.rep==="SUSPICIOUS"}),
+      na=uq("host"),nu=uq("user");
+  var s1="Die Daten enthalten "+az(l.length,"einen Vorgang","Vorgänge")+" von "+az(na,"einem Rechner","Rechnern");
+  if(nu)s1+=" und "+az(nu,"einem Benutzerkonto","Benutzerkonten");
+  if(mn&&mx)s1+=", "+(dstr(mn)===dstr(mx)?"alle am "+dstr(mn)+" zwischen "+tstr(mn)+" und "+tstr(mx)+" Uhr":"vom "+dstr(mn)+" bis "+dstr(mx));
+  h+=pp(esc(s1)+".");
+  if(bad.length){
+    var bh={};bad.forEach(function(x){if(x.host)bh[x.host]=1});
+    h+=pp("Bei "+nw(bad.length)+" davon stuft Rapid7 die beteiligte Datei als schädlich oder verdächtig ein"+
+      (Object.keys(bh).length>1?", verteilt auf "+nw(Object.keys(bh).length)+" Rechner":"")+".");
+  }
+  var agg={},ord=[];
+  for(i=0;i<l.length;i++){var fs=befund(l[i]);
+    for(var j=0;j<fs.length;j++){var k=fs[j].k;
+      if(!agg[k]){agg[k]={t:fs[j].t,n:0,who:{},proc:{}};ord.push(k)}
+      agg[k].n++;if(l[i].host)agg[k].who[l[i].host]=1;if(l[i].proc)agg[k].proc[l[i].proc]=1}}
+  if(ord.length){
+    for(i=0;i<ord.length&&i<6;i++){var a=agg[ord[i]],wq=Object.keys(a.who).length;
+      h+=pp(esc(a.t+" Das betrifft "+az(a.n,"einen Vorgang","Vorgänge")+(wq>1?" auf "+nw(wq)+" Rechnern":"")+"."))}
+  }else h+=pp("Auffälligkeiten sind aus den Daten nicht erkennbar.");
+  var tp=tally(l,function(x){return x.proc?x.proc:[]});
+  if(tp.length>1)h+=pp("Am häufigsten kommen die Programme "+esc(liste(tp.slice(0,4).map(function(x){return x.k}),"sowie"))+" vor.");
+  return h;
+}
+
+function textInv(l,al){
+  if(!l.length)return "";
+  var h="",i,open=l.filter(function(v){return v.status&&v.status!=="CLOSED"}),
+      closed=l.filter(function(v){return v.status==="CLOSED"}),
+      un=l.filter(function(v){return !v.asg}),
+      mal=l.filter(function(v){return v.disp==="MALICIOUS"}),
+      ds=l.map(function(v){return v.created}).filter(Boolean),
+      mn=ds.length?new Date(Math.min.apply(null,ds)):null,mx=ds.length?new Date(Math.max.apply(null,ds)):null;
+  var s1="Die Daten enthalten "+nn(l.length,"Investigation","Investigations",true);
+  if(mn&&mx&&dstr(mn)!==dstr(mx))s1+=" aus dem Zeitraum "+dstr(mn)+" bis "+dstr(mx);
+  else if(mn)s1+=" vom "+dstr(mn);
+  s1+=". "+(open.length?nw(open.length,true).charAt(0).toUpperCase()+nw(open.length,true).slice(1)+" davon "+(open.length===1?"ist":"sind")+" noch offen":"Alle sind abgeschlossen");
+  if(closed.length&&open.length)s1+=", "+nw(closed.length)+" "+(closed.length===1?"ist":"sind")+" abgeschlossen";
+  h+=pp(esc(s1)+".");
+  var hot=open.filter(function(v){return v.prio==="CRITICAL"||v.prio==="HIGH"})
+    .sort(function(a,b){var x=ORD.prio.indexOf(a.prio),y=ORD.prio.indexOf(b.prio);return (x<0?9:x)-(y<0?9:y)||(b.age||0)-(a.age||0)});
+  if(hot.length){
+    for(i=0;i<hot.length&&i<4;i++){var v=hot[i],z=[];
+      if(v.age!=null)z.push(seit(v.age)+" offen");
+      if(v.status&&v.status!=="OPEN")z.push("Status "+(STN[v.status]||v.status.toLowerCase()));
+      z.push(v.asg?"bearbeitet von "+v.asg:"niemandem zugewiesen");
+      h+=pp((i===0?"<b>Am dringendsten</b> ist ":"Dazu kommt ")+
+        (v.prio==="CRITICAL"?"ein als kritisch eingestufter Fall":"ein als hoch eingestufter Fall")+": "+
+        esc(q(v.title||tail(v.rrn)))+" — "+esc(liste(z))+".")}
+    if(hot.length>4)h+=pp(esc(hot.length-4===1?"Dazu kommt ein weiterer Fall mit hoher oder kritischer Einstufung.":"Dazu kommen "+nw(hot.length-4)+" weitere Fälle mit hoher oder kritischer Einstufung."));
+  }else if(open.length)h+=pp("Keiner der offenen Fälle ist als hoch oder kritisch eingestuft.");
+  var w=[];
+  if(un.length&&open.length)w.push(nw(un.length)+" von "+nw(l.length)+" Fällen "+(un.length===1?"hat":"haben")+" keinen Bearbeiter");
+  var stale=open.filter(function(v){return v.acc&&Date.now()-v.acc>6048e5});
+  if(stale.length)w.push(nn(stale.length,"offener Fall","offene Fälle")+" "+(stale.length===1?"wurde":"wurden")+" seit über einer Woche nicht mehr angefasst");
+  if(mal.length)w.push(nn(mal.length,"Fall","Fälle")+" "+(mal.length===1?"wurde":"wurden")+" als bösartig bewertet"+(mal.length<=2?": "+mal.map(function(v){return q(v.title||tail(v.rrn))}).join(", "):""));
+  if(w.length)h+=pp(esc(cap(liste(w))+"."));
+  return h;
+}
+
+function textRest(){
+  var p=[];
+  if(DB.ev.length)p.push(az(DB.ev.length,"einen Beweismittel-Eintrag","Beweismittel-Einträge"));
+  if(DB.com.length)p.push(az(DB.com.length,"einen Kommentar","Kommentare"));
+  if(DB.raw.length)p.push(az(DB.raw.length,"eine Log-Zeile","Log-Zeilen"));
+  if(DB.att.length)p.push(az(DB.att.length,"einen Anhang","Anhänge"));
+  if(!p.length)return "";
+  var h=pp((DB.inv.length||DB.evd.length?"Mitgeliefert sind außerdem ":"Die Daten enthalten ")+esc(liste(p))+".");
+  if(!DB.inv.length&&!DB.evd.length&&DB.com.length){
+    for(var i=0;i<DB.com.length&&i<6;i++){var c=nmap(DB.com[i]),cr=sub(c.creator),b=S(c.body);
+      if(b)h+=pp(esc((S(cr.name)?S(cr.name)+" schrieb":"Notiz")+(D(c.createdtime)?" "+when(D(c.createdtime)):"")+": "+q(b)))}}
+  return h;
+}
+function textWarn(){
+  var w=[];
+  if(DB.pg&&DB.pg.totaldata!=null&&DB.inv.length&&DB.pg.totaldata>DB.inv.length)
+    w.push("Achtung: die Schnittstelle meldet insgesamt "+DB.pg.totaldata+" Datensätze, hier liegen nur "+DB.inv.length+" davon vor. Das ist ein Auszug, kein vollständiges Bild.");
+  if(DB.lost)w.push(DB.lost===1?"Achtung: ein Abschnitt im eingefügten JSON war beschädigt und konnte nicht gelesen werden.":"Achtung: "+nw(DB.lost)+" Abschnitte im eingefügten JSON waren beschädigt und konnten nicht gelesen werden.");
+  if(DB.fix)w.push("Das JSON war fehlerhaft und wurde vor der Auswertung repariert.");
+  return w.length?pp('<span class="w">'+esc(w.join(" "))+"</span>"):"";
+}
+
+function scalarStr(v){return v===null?"null":v===true?"true":v===false?"false":String(v)}
+function genVal(v,dp){
+  if(v==null||typeof v!=="object"){var s=scalarStr(v);if(s.length>2000)s=s.slice(0,2000)+" …";return '<span class="gv">'+esc(s)+'</span>'}
+  if(Array.isArray(v)){
+    if(!v.length)return '<span class="gm">[leer]</span>';
+    if(dp>=9)return '<span class="gm">['+v.length+' Einträge]</span>';
+    var h='<div class="gobj">',i,lim=Math.min(v.length,300);
+    for(i=0;i<lim;i++)h+='<div class="grow"><span class="gk">'+i+'</span>'+genVal(v[i],dp+1)+'</div>';
+    if(v.length>lim)h+='<div class="grow gm">… und '+(v.length-lim)+' weitere</div>';
+    return h+'</div>';
+  }
+  var keys=[],k;for(k in v)if(OWN.call(v,k)&&k!=="__n")keys.push(k);
+  if(!keys.length)return '<span class="gm">{leer}</span>';
+  if(dp>=9)return '<span class="gm">{'+keys.length+' Felder}</span>';
+  var h2='<div class="gobj">',j,lim2=Math.min(keys.length,400);
+  for(j=0;j<lim2;j++)h2+='<div class="grow"><span class="gk">'+esc(keys[j])+'</span>'+genVal(v[keys[j]],dp+1)+'</div>';
+  if(keys.length>lim2)h2+='<div class="grow gm">… und '+(keys.length-lim2)+' weitere Felder</div>';
+  return h2+'</div>';
+}
+function renderGeneric(root){
+  if(root==null)return "";
+  return '<p class="gh">Kein bekanntes Investigation-Schema erkannt – generische Struktur-Ansicht des eingefügten JSON:</p><div class="gen">'+genVal(root,0)+'</div>';
+}
+
+function render(){
+  if(!DB)return;
+  var warn=textWarn();
+  var narr=textInv(DB.inv,DB.alr)+textEvd(DB.evd)+textRest();
+  if(narr){out.innerHTML='<div class="sum">'+narr+warn+"</div>";return}
+  var g=renderGeneric(DB.root);
+  out.innerHTML=g?'<div class="gen-wrap">'+g+warn+"</div>":'<div class="empty">STRG + V</div>';
+}
+
+var SEQ=0,FILE=location.protocol==="file:",READ=!FILE;
+function canRead(){
+  if(!(navigator.clipboard&&navigator.clipboard.readText))return Promise.resolve(false);
+  if(!navigator.permissions||!navigator.permissions.query)return Promise.resolve(!FILE);
+  return navigator.permissions.query({name:"clipboard-read"}).then(
+    function(s){return s.state==="granted"||(s.state==="prompt"&&!FILE)},
+    function(){return !FILE});
+}
+go.addEventListener("click",function(){
+  var my=++SEQ;
+  canRead().then(function(ok){
+    READ=ok;
+    if(my!==SEQ)return;
+    if(!ok)return arm();
+    var done=false,to=setTimeout(function(){if(!done&&my===SEQ)arm()},1200);
+    navigator.clipboard.readText().then(function(t){
+      done=true;clearTimeout(to);if(my!==SEQ)return;
+      if(t&&t.trim())ingest(t);else arm();
+    },function(){done=true;clearTimeout(to);if(my===SEQ)arm()});
+  });
+});
+function arm(){go.textContent="STRG + V";go.className="arm";sink.value="";sink.focus()}
+document.addEventListener("paste",function(e){
+  var t=(e.clipboardData||window.clipboardData);if(!t)return;
+  var v=t.getData("text");if(!v||!v.trim())return;
+  e.preventDefault();SEQ++;sink.value="";ingest(v);
+});
+canRead().then(function(ok){READ=ok;if(!DB)idle()});
+out.innerHTML='<div class="empty">STRG + V</div>';
+sink.focus();
+})();
+</script>
+</body>
+</html>
