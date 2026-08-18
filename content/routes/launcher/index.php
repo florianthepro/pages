@@ -1,24 +1,70 @@
 <?php
 $launcher_theme = (isset($launcher_theme) && in_array($launcher_theme, ['light','dark'], true)) ? $launcher_theme : 'auto';
 $launcher_title = (isset($launcher_title) && $launcher_title !== '') ? (string)$launcher_title : 'Launcher';
-$launcher_icondns = isset($launcher_icondns) ? trim((string)$launcher_icondns) : '';
-$launcher_icondomain = isset($launcher_icondomain) ? trim((string)$launcher_icondomain) : '';
-$__llinks = (isset($launcher_links) && is_array($launcher_links)) ? array_values($launcher_links) : [];
-$__links = [];
-foreach ($__llinks as $l) {
-    if (!is_array($l)) continue;
-    $u = trim((string)($l['url'] ?? ''));
-    if ($u === '') continue;
-    $__links[] = [
-        'group' => trim((string)($l['group'] ?? 'general')) ?: 'general',
-        'title' => trim((string)($l['title'] ?? $u)) ?: $u,
-        'url'   => $u,
-        'icon'  => trim((string)($l['icon'] ?? '')),
-    ];
+function launcher_pipe_item($s) {
+    $p = array_map('trim', explode('|', $s));
+    $item = ['title' => $p[0] ?? '', 'url' => $p[1] ?? '', 'icon' => $p[2] ?? ''];
+    if ($item['url'] === '' && preg_match('#^[a-z][a-z0-9+.-]*://#i', $item['title'])) {
+        $item['url'] = $item['title'];
+        $item['title'] = '';
+    }
+    return $item;
+}
+function launcher_inline_item($s) {
+    $item = ['title' => '', 'url' => '', 'icon' => ''];
+    if (preg_match_all('/([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(?:"([^"]*)"|\'([^\']*)\'|([^,}]+))/u', $s, $mm, PREG_SET_ORDER)) {
+        foreach ($mm as $m) {
+            $k = strtolower($m[1]);
+            $v = (isset($m[2]) && $m[2] !== '') ? $m[2] : ((isset($m[3]) && $m[3] !== '') ? $m[3] : trim($m[4] ?? ''));
+            if (array_key_exists($k, $item)) $item[$k] = trim($v);
+        }
+    }
+    return $item;
+}
+function launcher_parse_yaml($text) {
+    $out = [];
+    $group = 'general';
+    foreach (preg_split("/\r\n|\n|\r/", (string)$text) as $line) {
+        $line = trim($line);
+        if ($line === '' || $line[0] === '#') continue;
+        if (preg_match('/^([^:#\-][^:]*):\s*$/u', $line, $m)) {
+            $group = trim($m[1]) !== '' ? trim($m[1]) : 'general';
+            continue;
+        }
+        $item = null;
+        if ($line[0] === '-') {
+            $body = trim(substr($line, 1));
+            if ($body === '') continue;
+            $item = $body[0] === '{' ? launcher_inline_item($body) : launcher_pipe_item($body);
+        } elseif (preg_match('/^(.+?):\s*(\S.*)$/u', $line, $m)) {
+            $item = launcher_pipe_item(trim($m[1]) . ' | ' . trim($m[2]));
+        }
+        if (!$item || $item['url'] === '') continue;
+        $out[] = [
+            'group' => $group,
+            'title' => $item['title'] !== '' ? $item['title'] : $item['url'],
+            'url'   => $item['url'],
+            'icon'  => $item['icon'],
+        ];
+    }
+    return $out;
+}
+$__links = isset($launcher_yaml) ? launcher_parse_yaml($launcher_yaml) : [];
+if (!$__links && isset($launcher_links) && is_array($launcher_links)) {
+    foreach (array_values($launcher_links) as $l) {
+        if (!is_array($l)) continue;
+        $u = trim((string)($l['url'] ?? ''));
+        if ($u === '') continue;
+        $__links[] = [
+            'group' => trim((string)($l['group'] ?? 'general')) ?: 'general',
+            'title' => trim((string)($l['title'] ?? $u)) ?: $u,
+            'url'   => $u,
+            'icon'  => trim((string)($l['icon'] ?? '')),
+        ];
+    }
 }
 $__jflags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT;
 $links_json = json_encode($__links, $__jflags);
-$cfg_json = json_encode(['icondns' => $launcher_icondns, 'icondomain' => $launcher_icondomain], $__jflags);
 $theme_json = json_encode($launcher_theme, $__jflags);
 function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
 $htmlClass = $launcher_theme === 'dark' ? ' class="dark-mode-forced"' : ($launcher_theme === 'light' ? ' class="light-mode-forced"' : '');
@@ -208,25 +254,24 @@ $htmlClass = $launcher_theme === 'dark' ? ' class="dark-mode-forced"' : ($launch
 const COOKIE_NAME = 'launcher_order';
 const THEME_COOKIE = 'launcher_theme';
 const DEFAULT_LINKS = <?= $links_json ?>;
-const LCFG = <?= $cfg_json ?>;
 const INSTANCE_THEME = <?= $theme_json ?>;
-function iconTpl(t, host, url){ return String(t).replace(/\{host\}/g, host).replace(/\{url\}/g, encodeURIComponent(url)); }
 
 function setCookie(name, value){ try{ localStorage.setItem(name, value); }catch(e){} }
 function getCookie(name){ try{ return localStorage.getItem(name); }catch(e){ return null; } }
 function eraseCookie(name){ try{ localStorage.removeItem(name); }catch(e){} }
 
-/* Icons kommen live aus dem Web (keine lokalen Bilddateien). Reihenfolge je Kachel:
-   1) explizites Icon der Kachel (falls gesetzt)  2) Favicon direkt vom Webserver der Seite
-   3) Icon-DNS-Dienst (LCFG.icondns)  4) zusaetzliche Icon-Domain (LCFG.icondomain)  5) Initialen. */
+/* Icons holt der Browser direkt von der Ziel-Seite (keine lokalen Bilddateien, kein
+   Fremddienst). Damit funktionieren auch interne Seiten, die der Server nicht erreicht:
+   der Browser sitzt im lokalen Netz und laedt das Icon von dort.
+   Reihenfolge: 1) icon aus der YAML  2) /favicon.ico der Seite  3) Initialen. */
 function iconCandidates(item){
   const out = [];
-  if (item.iconUrl) { const u = String(item.iconUrl); if (/^(https?:|data:)/i.test(u)) out.push(u); }
-  let host = '';
-  try { host = new URL(item.url).host; } catch(e){}
-  if (host) { try { out.push(new URL('/favicon.ico', item.url).href); } catch(e){} }
-  if (LCFG.icondns) out.push(iconTpl(LCFG.icondns, host, item.url));
-  if (LCFG.icondomain) out.push(iconTpl(LCFG.icondomain, host, item.url));
+  if (item.iconUrl) {
+    const u = String(item.iconUrl).trim();
+    if (/^(https?:|data:)/i.test(u)) out.push(u);
+    else { try { out.push(new URL(u, item.url).href); } catch(e){} }
+  }
+  try { out.push(new URL('/favicon.ico', item.url).href); } catch(e){}
   return out;
 }
 function readDefaultLinks(){
