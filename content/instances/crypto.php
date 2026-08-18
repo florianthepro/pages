@@ -9,7 +9,7 @@ $sharedVars=get_defined_vars();
 
 $yaml=<<<'YAML'
 license: "https://raw.githubusercontent.com/florianthepro/pages/main/LICENSE"
-blocked: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/blocked.html"
+blocked: "https://raw.githubusercontent.com/florianthepro/pages/main/content/instances/blocked.html"
 index: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/crypto/index.php"
 api: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/crypto/api.php"
 YAML;
