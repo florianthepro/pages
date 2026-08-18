@@ -26,11 +26,9 @@ button.err{border-color:var(--bad);color:var(--bad)}
 
 main{padding:26px 22px 80px}
 .io{max-width:96ch;margin:0 auto 8px}
-#in{display:block;width:100%;height:150px;min-height:64px;max-height:40vh;resize:vertical;box-sizing:border-box;background:var(--pnl);color:var(--fg);border:1px solid var(--line2);padding:12px 14px;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono",monospace;outline:none;overflow:auto;white-space:pre;tab-size:2}
+#in{display:block;width:100%;height:80px;min-height:40px;max-height:34vh;resize:vertical;box-sizing:border-box;background:var(--pnl);color:var(--fg);border:1px solid var(--line2);padding:9px 12px;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono",monospace;outline:none;overflow:auto;white-space:pre;tab-size:2}
 #in:focus{border-color:#3f3f3f}
 #in::placeholder{color:var(--dim)}
-.bar{display:flex;align-items:center;gap:14px;margin-top:10px}
-.bar #hint{font-size:11px;color:var(--mut);letter-spacing:.06em}
 .keys{max-width:88ch;margin:24px auto 0;display:flex;flex-direction:column;gap:12px}
 .kcard{border:1px solid var(--line);background:var(--pnl);padding:11px 15px}
 .ktag{font-size:10px;letter-spacing:.2em;color:var(--mut);text-transform:uppercase;margin-bottom:9px}
@@ -45,10 +43,7 @@ main{padding:26px 22px 80px}
 .kline.warn .ktext{color:var(--bad)}
 .warnbox{max-width:88ch;margin:0 auto 16px;border:1px solid var(--bad);padding:9px 14px}
 .warnbox p{margin:0;color:var(--bad);font-size:12px;line-height:1.5}
-.kblockwrap{position:relative}
-.kblock{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:12px 14px;font-size:12.5px;line-height:1.75;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;color:var(--fg)}
-.kcopy{position:absolute;top:8px;right:8px;background:var(--pnl);border:1px solid var(--line2);border-radius:6px;color:var(--mut);font:inherit;font-size:11px;padding:3px 10px;cursor:pointer}
-.kcopy:hover{color:var(--fg);border-color:#3f3f3f}
+.kblock{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:12px 14px;font-size:12.5px;line-height:1.75;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;color:var(--fg);user-select:text}
 .kact{margin-top:11px;font-size:12.5px;line-height:1.55;color:var(--fg)}
 .kact .klab{display:inline;min-width:0;color:var(--mut);text-transform:uppercase;letter-spacing:.11em;font-size:9.5px;margin-right:9px}
 .kcard.warn{border-left:2px solid var(--bad)}
@@ -77,15 +72,14 @@ main{padding:26px 22px 80px}
 </header>
 <main>
 <div class="io">
-<textarea id="in" spellcheck="false" autocomplete="off" placeholder="Rapid7 Investigation-JSON hier einf&uuml;gen&hellip;"></textarea>
-<div class="bar"><button id="go" class="hot">Analysieren</button><span id="hint">Strg + Enter</span></div>
+<textarea id="in" spellcheck="false" autocomplete="off" placeholder="Rapid7 Investigation-JSON hier einf&uuml;gen &ndash; wird automatisch ausgewertet"></textarea>
 </div>
 <div id="out"><div class="empty">&mdash;</div></div>
 </main>
 <script>
 (function(){
 "use strict";
-var $=function(s){return document.querySelector(s)},out=$("#out"),go=$("#go"),inp=$("#in"),hint=$("#hint");
+var $=function(s){return document.querySelector(s)},out=$("#out"),inp=$("#in");
 function hh(){document.documentElement.style.setProperty("--hh",document.querySelector("header").offsetHeight+"px")}
 addEventListener("resize",hh);hh();
 var DB=null,F={prio:{},status:{},disp:{},src:{},asg:{},tag:{},atype:{},asrc:{},rep:{},thr:{},host:{},user:{},proc:{},os:{},fam:{},pc:{}},SORT={k:"created",a:false},SORTE={k:"time",a:false},OPEN={},Q="";
@@ -438,9 +432,9 @@ function ingest(txt){
   DB={inv:invs,alr:alrs,evd:bag.evd.map(mkEvd),auth:bag.auth.map(mkAuth),ev:bag.ev,com:bag.com,att:bag.att,raw:bag.raw,pg:c.pg,fix:FIX,lost:LOST,root:root,known:!!known};
   idle();render();window.scrollTo(0,0);
 }
-function idle(){go.textContent="Analysieren";go.className="hot"}
-function fail(){go.textContent="× Ungültiges JSON";go.className="err";setTimeout(idle,1800)}
-function empty(){DB=null;out.innerHTML='<div class="empty">KEINE DATEN</div>';go.textContent="× Leer";go.className="err";setTimeout(idle,1800)}
+function idle(){}
+function fail(){out.innerHTML='<div class="empty">JSON UNGÜLTIG</div>';}
+function empty(){DB=null;out.innerHTML='<div class="empty">&mdash;</div>';}
 
 function tally(arr,fn){
   var m={},i,v;
@@ -805,7 +799,7 @@ function keyPanel(tag,facts,tri){
   if(!facts.length&&!tri)return "";
   var block=keyLines(facts,tri&&tri.rel);
   var h='<div class="kcard'+(tri&&tri.warn?' warn':'')+'"><div class="ktag">'+esc(tag)+'</div>';
-  if(block)h+='<div class="kblockwrap"><button class="kcopy" type="button">Kopieren</button><pre class="kblock">'+esc(block)+'</pre></div>';
+  if(block)h+='<pre class="kblock">'+esc(block)+'</pre>';
   if(tri&&tri.act)h+='<div class="kact"><span class="klab">Aktion</span>'+esc(tri.act)+'</div>';
   return h+"</div>";
 }
@@ -825,16 +819,7 @@ function renderKeys(){
   if(total>MAX)out.push('<div class="kmore">… und '+(total-MAX)+" weitere</div>");
   return out.length?'<div class="keys">'+out.join("")+"</div>":"";
 }
-function paint(html){
-  out.innerHTML=html;
-  var bs=out.querySelectorAll(".kcopy"),i;
-  for(i=0;i<bs.length;i++)(function(b){b.addEventListener("click",function(){
-    var pre=b.parentNode.querySelector("pre");if(!pre)return;var txt=pre.textContent,label=b.textContent;
-    function done(){b.textContent="Kopiert";setTimeout(function(){b.textContent=label;},1200);}
-    function fb(){try{var r=document.createRange();r.selectNodeContents(pre);var s=getSelection();s.removeAllRanges();s.addRange(r);document.execCommand("copy");s.removeAllRanges();done();}catch(e){}}
-    if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(txt).then(done,fb);else fb();
-  });})(bs[i]);
-}
+function paint(html){out.innerHTML=html;}
 function render(){
   if(!DB)return;
   var warn=textWarn(),warnHtml=warn?'<div class="warnbox">'+warn+"</div>":"";
@@ -847,10 +832,9 @@ function render(){
 }
 
 function analyze(){var t=inp.value;if(t&&t.trim())ingest(t);else empty();}
-go.addEventListener("click",analyze);
-inp.addEventListener("keydown",function(e){if((e.ctrlKey||e.metaKey)&&(e.key==="Enter"||e.keyCode===13)){e.preventDefault();analyze();}});
-inp.addEventListener("paste",function(){setTimeout(analyze,0);});
-idle();
+var __deb;
+inp.addEventListener("input",function(){clearTimeout(__deb);__deb=setTimeout(analyze,300);});
+inp.addEventListener("paste",function(){clearTimeout(__deb);setTimeout(analyze,0);});
 out.innerHTML='<div class="empty">&mdash;</div>';
 inp.focus();
 })();
