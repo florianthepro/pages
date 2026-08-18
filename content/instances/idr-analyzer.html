@@ -128,6 +128,22 @@ function commas(t){
   }
   return o.join("");
 }
+function looseQuotes(t){
+  if(t.indexOf('"')<0)return t;
+  var o=[],i,n=t.length,inStr=false,esc=false,changed=false,c,j,nx;
+  for(i=0;i<n;i++){c=t[i];
+    if(!inStr){o.push(c);if(c==='"')inStr=true;continue}
+    if(esc){o.push(c);esc=false;continue}
+    if(c==="\\"){o.push(c);esc=true;continue}
+    if(c==='"'){
+      j=i+1;while(j<n&&(t[j]===" "||t[j]==="\t"||t[j]==="\n"||t[j]==="\r"))j++;
+      nx=j<n?t[j]:"";
+      if(nx===""||nx===","||nx===":"||nx==="}"||nx==="]"){o.push('"');inStr=false}
+      else{o.push('\\','"');changed=true}
+      continue}
+    o.push(c)}
+  return changed?o.join(""):t;
+}
 function fixups(t){
   var a=[],b;
   b=t.replace(/[\u201c\u201d\u201e\u201f\u2033]/g,'"').replace(/[\u2018\u2019\u201a\u201b\u2032]/g,"'")
@@ -141,6 +157,8 @@ function fixups(t){
   a.push(b.replace(/(^|[[{,:\s])None(\s*[,}\]]|$)/g,"$1null$2").replace(/(^|[[{,:\s])True(\s*[,}\]]|$)/g,"$1true$2").replace(/(^|[[{,:\s])False(\s*[,}\]]|$)/g,"$1false$2"));
   if(/&quot;|&amp;|&lt;/.test(b))a.push(b.replace(/&quot;/g,'"').replace(/&#39;|&apos;/g,"'").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&amp;/g,"&"));
   if(b.indexOf('"')<0&&b.indexOf("'")>=0)a.push(b.replace(/'/g,'"'));
+  var lq=looseQuotes(b);
+  if(lq!==b){a.push(lq);a.push(commas(ctl(lq)))}
   return a;
 }
 function tryParse(t){
@@ -223,6 +241,20 @@ function nmap(o){
 }
 function pick(m){for(var i=1;i<arguments.length;i++){var v=m[arguments[i]];if(v!=null&&v!=="")return v}return null}
 function has(m){for(var i=1;i<arguments.length;i++)if(m[arguments[i]]!=null)return true;return false}
+// generischer key=value / key="value" Parser (Syslog, alte Rapid7-source_data-Felder)
+function kvPairs(str){
+  var s=S(str);if(!s||s.indexOf("=")<0)return null;
+  s=s.replace(/^<\d+>/,"");                                  // Syslog-Prioritaet <189> entfernen
+  var re=/([A-Za-z0-9_.\-]+)=("([^"]*)"|[^\s"]*)/g,mm,o={},raw=[],n=0,v;
+  while((mm=re.exec(s))!==null){
+    v=mm[3]!=null?mm[3]:mm[2];
+    if(v==null)v="";v=v.trim();
+    if(v===""||v==="N/A"||v==="-"||v==="n/a")continue;
+    var nk=nkey(mm[1]);if(!(nk in o))o[nk]=v;
+    raw.push([mm[1],v]);
+    if(++n>500)break}
+  return raw.length?{map:o,raw:raw}:null;
+}
 function kind(o){
   var m=nmap(o),r=S(m.rrn);
   if(/:investigation:/i.test(r))return "inv";
@@ -370,19 +402,20 @@ function mkAuth(o,i){
   var m=nmap(o),
       sj=sub(m.sourcejson),pr=sub(sj.properties),
       dd=sub(pr.devicedetail),st=sub(pr.status),ploc=sub(pr.location),
-      ctx=sub(m.r7context),cu=sub(ctx.user),ca=sub(ctx.account);
+      ctx=sub(m.r7context),cu=sub(ctx.user),ca=sub(ctx.account),
+      sdp=kvPairs(m.sourcedata),sd=sdp?sdp.map:{};        // NEU: alte Logs, Syslog key=value in source_data
   var v={idx:i,raw:o,
-    time:D(pick(m,"timestamp","eventtime","time")||pick(pr,"createddatetime")||pick(sj,"time")),
+    time:D(pick(m,"timestamp","eventtime","time")||pick(pr,"createddatetime")||pick(sj,"time")||pick(sd,"date")),
     user:S(pick(m,"user","username","identity")||pick(pr,"userdisplayname")||pick(cu,"name")),
-    account:S(pick(m,"account","useraccount")||pick(pr,"userprincipalname")||pick(ca,"name")),
-    service:S(pick(m,"service")||pick(pr,"resourcedisplayname")||pick(sj,"operationname")),
+    account:S(pick(m,"account","useraccount")||pick(pr,"userprincipalname")||pick(ca,"name")||pick(sd,"xauthuser","username")),
+    service:S(pick(m,"service")||pick(pr,"resourcedisplayname")||pick(sj,"operationname")||pick(sd,"subtype","type")),
     app:S(pick(pr,"appdisplayname","serviceprincipalname")||pick(m,"application")),
     clientapp:S(pick(pr,"clientappused")),
-    ip:S(pick(m,"sourceip","ipaddress")||pick(pr,"ipaddress")||pick(sj,"calleripaddress")),
+    ip:S(pick(m,"sourceip","ipaddress")||pick(pr,"ipaddress")||pick(sj,"calleripaddress")||pick(sd,"remip","srcip")),
     city:S(pick(m,"geoipcity")),
     ploccity:S(pick(ploc,"city")),
     region:S(pick(m,"geoipregion")||pick(ploc,"state")),
-    country:S(pick(m,"geoipcountryname")||pick(ploc,"countryorregion")||pick(m,"geoipcountrycode")),
+    country:S(pick(m,"geoipcountryname")||pick(ploc,"countryorregion")||pick(m,"geoipcountrycode")||pick(sd,"srccountry")),
     org:S(pick(m,"geoiporganization")),
     conn:S(pick(m,"geoipconnectiontype")),
     ua:S(pick(m,"useragent")||pick(pr,"useragent")),
@@ -395,6 +428,14 @@ function mkAuth(o,i){
     mfadetail:S(pick(st,"additionaldetails")),
     risk:U(pick(pr,"risklevelaggregated","riskleveldduringsignin","riskstate")||pick(m,"risk")),
     entryid:S(pick(m,"entryid")),
+    action:S(pick(m,"action","activity")||pick(sd,"action","activity","event")),
+    assignedip:S(pick(m,"assignedip")||pick(sd,"assignip","assignedip","tunnelip","framedipaddress","framedip")),
+    tunnel:S(pick(sd,"vpntunnel","tunnel")),
+    tunneltype:S(pick(sd,"tunneltype","vpntype")),
+    vpngroup:S(pick(sd,"xauthgroup","usergroup","memberof")),
+    logdesc:S(pick(m,"description")||pick(sd,"logdesc","description","reason")||pick(sd,"msg","message")),
+    device:S(pick(sd,"devname","devid")),
+    hasmfa:has(pr,"authenticationrequirement")||has(st,"additionaldetails")||/mfa|multifactor/i.test(S(m.mfa)+" "+S(pick(pr,"authenticationrequirement"))),
     capolicies:[]};
   var rt=pick(sj,"resulttype");
   v.result=U(pick(m,"result","authenticationresult")||pick(pr,"conditionalaccessstatus")||pick(sj,"resultsignature"));
@@ -405,7 +446,7 @@ function mkAuth(o,i){
     v.capolicies.push({name:S(pick(p,"displayname","id")),result:U(pick(p,"result")),controls:Array.isArray(p.enforcedgrantcontrols)?p.enforcedgrantcontrols.map(S):[]});}
   v.geoConflict=!!(v.city&&v.ploccity&&U(v.city)!==U(v.ploccity));
   v.mfaClaim=/claim in the token|previously satisfied/i.test(v.mfadetail);
-  v.blob=[v.user,v.account,v.service,v.app,v.ip,v.city,v.country,v.org,v.result,v.risk].join(" ").toLowerCase();
+  v.blob=[v.user,v.account,v.service,v.app,v.ip,v.city,v.country,v.org,v.result,v.risk,v.action,v.tunnel,v.tunneltype,v.vpngroup,v.assignedip,v.device].join(" ").toLowerCase();
   return v;
 }
 function priv(ip){var p=ip.split(".").map(Number);
@@ -738,25 +779,36 @@ function renderGeneric(root){
 function kf(l,v){return (v!=null&&v!==""&&v!==false)?[l,String(v)]:null}
 function factsInv(v){return [kf("Titel",v.title||tail(v.rrn)),kf("Priorität",v.prio&&cap(v.prio.toLowerCase())),kf("Status",STN[v.status]||(v.status&&v.status.toLowerCase())),kf("Bewertung",v.disp&&v.disp.toLowerCase()),kf("Bearbeiter",v.asg),kf("Erstellt",v.created&&fdt(v.created))].filter(Boolean)}
 function mfaVal(e){var req=e.mfareq==="MULTIFACTORAUTHENTICATION"||/mfa/i.test(e.mfadetail);if(!req)return "nicht erforderlich";if(e.ok===false)return "nicht bestanden";return "erfolgreich"+(e.mfaClaim?" (Token-Claim)":"");}
-function factsAuth(e){return [kf("Nutzer",e.user),kf("Konto",e.account),kf("Dienst",e.service),kf("Ergebnis",e.result&&(e.ok===false?"fehlgeschlagen":"erfolgreich")),kf("IP",e.ip),kf("Ort",[e.city,e.country].filter(Boolean).join(", ")),kf("Zeit",e.time&&fdt(e.time)),kf("MFA",mfaVal(e))].filter(Boolean)}
+function factsAuth(e){return [kf("Nutzer",e.user),kf("Konto",e.account),kf("Dienst",e.service),kf("Aktion",e.action),kf("Ergebnis",e.result&&(e.ok===false?"fehlgeschlagen":"erfolgreich")),kf("IP",e.ip),kf("Ort",[e.city,e.country].filter(Boolean).join(", ")),kf("Zugewiesene IP",e.assignedip),kf("Tunnel",e.tunnel&&(e.tunnel+(e.tunneltype?" ("+e.tunneltype+")":""))),kf("Gruppe",e.vpngroup),kf("Beschreibung",e.logdesc),kf("Gerät",e.device),kf("Zeit",e.time&&fdt(e.time)),kf("MFA",e.hasmfa?mfaVal(e):"")].filter(Boolean)}
 function factsEvd(e){return [kf("Rechner",e.host),kf("Nutzer",e.user),kf("Prozess",e.proc),kf("Datei",e.file),kf("Ziel-IP",e.dip),kf("Einstufung",e.rep&&e.rep!=="UNKNOWN"&&e.rep.toLowerCase()),kf("Zeit",e.time&&fdt(e.time))].filter(Boolean)}
 function factsAlert(a){return [kf("Alarm",a.title||a.type),kf("Typ",(a.type&&a.type!==a.title)?a.type:""),kf("Quelle",a.src),kf("Zeit",(a.created||a.first)&&fdt(a.created||a.first))].filter(Boolean)}
 function factsGeneric(o){
-  var m=nmap(o),spec=[["Nutzer",["user","username","userdisplayname","identity","actor"]],["Konto",["account","userprincipalname","email","mail"]],["Rechner",["hostname","assetname","host","computername"]],["Dienst",["service","application","appdisplayname","resourcedisplayname","producer"]],["Aktion",["action","operation","operationname","eventtype","activity","category"]],["Ergebnis",["result","status","outcome","resultsignature","disposition","severity"]],["Quell-IP",["sourceip","srcip","ipaddress","calleripaddress"]],["Ziel-IP",["destinationip","dstip","destinationaddress"]],["Zeit",["timestamp","time","eventedat","createdtime","eventtime","createddatetime"]]],res=[],i,j;
+  var m=nmap(o),sdp=kvPairs(m.sourcedata),sd=sdp?sdp.map:{};   // alte Logs: source_data mitlesen
+  var spec=[["Nutzer",["user","username","userdisplayname","identity","actor","xauthuser"]],["Konto",["account","userprincipalname","email","mail"]],["Rechner",["hostname","assetname","host","computername","devname"]],["Dienst",["service","application","appdisplayname","resourcedisplayname","producer","subtype"]],["Aktion",["action","operation","operationname","eventtype","activity","category"]],["Ergebnis",["result","status","outcome","resultsignature","disposition","severity","level"]],["Quell-IP",["sourceip","srcip","ipaddress","calleripaddress","remip"]],["Ziel-IP",["destinationip","dstip","destinationaddress","assignip","tunnelip"]],["Zeit",["timestamp","time","eventedat","createdtime","createddatetime","date"]]],res=[],i,j;
   for(i=0;i<spec.length;i++){var lab=spec[i][0],ks=spec[i][1],val=null;
-    for(j=0;j<ks.length;j++){var vv=m[ks[j]];if(vv!=null&&typeof vv!=="object"&&String(vv)!==""){val=vv;break}}
+    for(j=0;j<ks.length;j++){var vv=m[ks[j]];if(vv!=null&&typeof vv!=="object"&&String(vv)!==""){val=vv;break}
+      var wv=sd[ks[j]];if(wv!=null&&String(wv)!==""){val=wv;break}}
     if(val!=null){if(lab==="Zeit"){var d=D(val);if(d)val=fdt(d)}res.push([lab,String(val)])}
   }
   return res;
 }
 function relLine(parts){var p=parts.filter(Boolean);return p.length?p.join(" · "):"—"}
+function connNote(a){
+  if(!a)return "";var s=a.toLowerCase();
+  if(/fail|deny|denied|reject|error|invalid|block/.test(s))return "";      // Fehlschlag deckt die Ergebnis-Zeile ab
+  if(/tunnel-?up|connect|login|logon|logged-?on|established|success|open\b/.test(s))return "Verbindung aufgebaut";
+  if(/tunnel-?down|disconnect|logout|logoff|logged-?off|closed|terminate/.test(s))return "Verbindung getrennt";
+  return "";
+}
 function triageAuth(e){
-  var rel=relLine([(e.geoConflict?"Standorte widersprüchlich":""),(e.managed===false&&e.compliant===false?"Gerät unverwaltet":""),"Risiko "+(e.risk&&e.risk!=="NONE"?e.risk.toLowerCase():"keine")]);
+  var cn=connNote(e.action);
+  var rel=relLine([(e.ok===false?"Anmeldung fehlgeschlagen":""),(e.geoConflict?"Standorte widersprüchlich":""),(e.managed===false&&e.compliant===false?"Gerät unverwaltet":""),cn,"Risiko "+(e.risk&&e.risk!=="NONE"?e.risk.toLowerCase():"keine")]);
   var warn=e.ok===false||(e.risk&&e.risk!=="NONE")||e.geoConflict;
   var act;
   if(e.ok===false)act="Weitere Fehlversuche und Herkunft prüfen; bei Brute-Force Konto sperren.";
   else if(e.geoConflict||(e.risk&&e.risk!=="NONE"))act="Standort und Gerät verifizieren; im Verdachtsfall Sitzung beenden und Passwort zurücksetzen.";
   else if(e.managed===false&&e.compliant===false)act="Klären, ob die Anmeldung von einem erlaubten Gerät kam.";
+  else if(cn)act="Regulärer VPN-Vorgang – Konto und Herkunft ("+(e.city||e.country||e.ip||"unbekannt")+") gegen das erwartete Muster abgleichen.";
   else act="Kein akuter Handlungsbedarf.";
   return {rel:rel,warn:warn,act:act};
 }
