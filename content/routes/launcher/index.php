@@ -1,9 +1,8 @@
 <?php
 $launcher_theme = (isset($launcher_theme) && in_array($launcher_theme, ['light','dark'], true)) ? $launcher_theme : 'auto';
 $launcher_title = (isset($launcher_title) && $launcher_title !== '') ? (string)$launcher_title : 'Launcher';
-$launcher_iconbase = isset($launcher_iconbase) ? rtrim((string)$launcher_iconbase, '/') . '/' : '';
-$launcher_iconext = (isset($launcher_iconext) && $launcher_iconext !== '') ? (string)$launcher_iconext : '.ico';
-$launcher_iconmode = (isset($launcher_iconmode) && in_array($launcher_iconmode, ['favicon','folder'], true)) ? $launcher_iconmode : 'auto';
+$launcher_icondns = isset($launcher_icondns) ? trim((string)$launcher_icondns) : '';
+$launcher_icondomain = isset($launcher_icondomain) ? trim((string)$launcher_icondomain) : '';
 $__llinks = (isset($launcher_links) && is_array($launcher_links)) ? array_values($launcher_links) : [];
 $__links = [];
 foreach ($__llinks as $l) {
@@ -19,7 +18,7 @@ foreach ($__llinks as $l) {
 }
 $__jflags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT;
 $links_json = json_encode($__links, $__jflags);
-$cfg_json = json_encode(['iconbase' => $launcher_iconbase, 'iconext' => $launcher_iconext, 'mode' => $launcher_iconmode], $__jflags);
+$cfg_json = json_encode(['icondns' => $launcher_icondns, 'icondomain' => $launcher_icondomain], $__jflags);
 $theme_json = json_encode($launcher_theme, $__jflags);
 function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
 $htmlClass = $launcher_theme === 'dark' ? ' class="dark-mode-forced"' : ($launcher_theme === 'light' ? ' class="light-mode-forced"' : '');
@@ -211,21 +210,24 @@ const THEME_COOKIE = 'launcher_theme';
 const DEFAULT_LINKS = <?= $links_json ?>;
 const LCFG = <?= $cfg_json ?>;
 const INSTANCE_THEME = <?= $theme_json ?>;
-const FAVICON = url => 'https://www.google.com/s2/favicons?sz=128&domain_url=' + encodeURIComponent(url);
+function iconTpl(t, host, url){ return String(t).replace(/\{host\}/g, host).replace(/\{url\}/g, encodeURIComponent(url)); }
 
 function setCookie(name, value){ try{ localStorage.setItem(name, value); }catch(e){} }
 function getCookie(name){ try{ return localStorage.getItem(name); }catch(e){ return null; } }
 function eraseCookie(name){ try{ localStorage.removeItem(name); }catch(e){} }
 
-function iconFor(item){
-  if (item.iconUrl) {
-    const u = String(item.iconUrl);
-    if (/^(https?:|data:|\/)/i.test(u)) return u;
-    return (LCFG.iconbase || '') + u;
-  }
-  if (LCFG.mode === 'favicon') return FAVICON(item.url);
-  if (LCFG.iconbase) return LCFG.iconbase + encodeURIComponent(item.title) + (LCFG.iconext || '');
-  return FAVICON(item.url);
+/* Icons kommen live aus dem Web (keine lokalen Bilddateien). Reihenfolge je Kachel:
+   1) explizites Icon der Kachel (falls gesetzt)  2) Favicon direkt vom Webserver der Seite
+   3) Icon-DNS-Dienst (LCFG.icondns)  4) zusaetzliche Icon-Domain (LCFG.icondomain)  5) Initialen. */
+function iconCandidates(item){
+  const out = [];
+  if (item.iconUrl) { const u = String(item.iconUrl); if (/^(https?:|data:)/i.test(u)) out.push(u); }
+  let host = '';
+  try { host = new URL(item.url).host; } catch(e){}
+  if (host) { try { out.push(new URL('/favicon.ico', item.url).href); } catch(e){} }
+  if (LCFG.icondns) out.push(iconTpl(LCFG.icondns, host, item.url));
+  if (LCFG.icondomain) out.push(iconTpl(LCFG.icondomain, host, item.url));
+  return out;
 }
 function readDefaultLinks(){
   const result = {};
@@ -348,9 +350,9 @@ function buildGrid(gid){
     a.dataset.index = String(idx); a.dataset.section = gid; a.draggable = editorMode;
     const icon = document.createElement('div'); icon.className = 'icon';
     const img = document.createElement('img'); img.alt = item.title + ' icon'; img.loading = 'lazy';
-    let step = 0;
-    img.onerror = () => { if (step === 0) { step = 1; img.src = FAVICON(item.url); } else { img.onerror = null; img.src = initialsDataUrl(item.title, 128, colorFromHost(item.url)); } };
-    img.src = iconFor(item);
+    const cands = iconCandidates(item); let ci = 0;
+    img.onerror = () => { ci++; if (ci < cands.length) { img.src = cands[ci]; } else { img.onerror = null; img.src = initialsDataUrl(item.title, 128, colorFromHost(item.url)); } };
+    img.src = cands.length ? cands[0] : initialsDataUrl(item.title, 128, colorFromHost(item.url));
     icon.appendChild(img);
     a.appendChild(icon);
     const t = document.createElement('span'); t.className = 'tile-title'; t.textContent = item.title; a.appendChild(t);
@@ -388,7 +390,7 @@ function editLink(gid, idx){
   const newTitle = prompt('App-Name:', item.title); if (newTitle === null) return;
   let newUrl = prompt('URL:', item.url); if (newUrl === null) return;
   try { if (!/^https?:\/\//i.test(newUrl)) newUrl = 'https://' + newUrl; new URL(newUrl); } catch(e){ alert('Ungültige URL'); return; }
-  let newIconUrl = prompt('Icon (Dateiname im Icon-Ordner oder URL, optional):', item.iconUrl || '');
+  let newIconUrl = prompt('Icon-URL (optional, sonst automatisch):', item.iconUrl || '');
   if (newIconUrl !== null) { newIconUrl = newIconUrl.trim(); } else { newIconUrl = item.iconUrl; }
   allLinks[gid][idx] = { title: newTitle.trim(), url: newUrl.trim(), iconUrl: newIconUrl || null };
   saveLinks(allLinks); buildAllGrids();
@@ -403,7 +405,7 @@ function handleAdd(gid){
   const title = prompt('App-Name (z.B. GitHub):'); if (!title) return;
   let url = prompt('URL (mit https://):'); if (!url) return;
   try { if (!/^https?:\/\//i.test(url)) url = 'https://' + url; new URL(url); } catch(e){ alert('Ungültige URL'); return; }
-  let iconUrl = prompt('Icon (Dateiname im Icon-Ordner oder URL, optional):');
+  let iconUrl = prompt('Icon-URL (optional, sonst automatisch):');
   iconUrl = iconUrl ? iconUrl.trim() : null;
   if (!allLinks[gid]) allLinks[gid] = [];
   allLinks[gid].push({ title: title.trim(), url: url.trim(), iconUrl: iconUrl || null });
