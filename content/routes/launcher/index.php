@@ -3,6 +3,7 @@ $launcher_theme = (isset($launcher_theme) && in_array($launcher_theme, ['light',
 $launcher_title = (isset($launcher_title) && $launcher_title !== '') ? (string)$launcher_title : 'Launcher';
 $launcher_iconbase = isset($launcher_iconbase) ? rtrim((string)$launcher_iconbase, '/') . '/' : '';
 $launcher_iconext = (isset($launcher_iconext) && $launcher_iconext !== '') ? (string)$launcher_iconext : '.ico';
+$launcher_iconmode = (isset($launcher_iconmode) && in_array($launcher_iconmode, ['favicon','folder'], true)) ? $launcher_iconmode : 'auto';
 $__llinks = (isset($launcher_links) && is_array($launcher_links)) ? array_values($launcher_links) : [];
 $__links = [];
 foreach ($__llinks as $l) {
@@ -18,7 +19,7 @@ foreach ($__llinks as $l) {
 }
 $__jflags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT;
 $links_json = json_encode($__links, $__jflags);
-$cfg_json = json_encode(['iconbase' => $launcher_iconbase, 'iconext' => $launcher_iconext], $__jflags);
+$cfg_json = json_encode(['iconbase' => $launcher_iconbase, 'iconext' => $launcher_iconext, 'mode' => $launcher_iconmode], $__jflags);
 $theme_json = json_encode($launcher_theme, $__jflags);
 function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
 $htmlClass = $launcher_theme === 'dark' ? ' class="dark-mode-forced"' : ($launcher_theme === 'light' ? ' class="light-mode-forced"' : '');
@@ -222,6 +223,7 @@ function iconFor(item){
     if (/^(https?:|data:|\/)/i.test(u)) return u;
     return (LCFG.iconbase || '') + u;
   }
+  if (LCFG.mode === 'favicon') return FAVICON(item.url);
   if (LCFG.iconbase) return LCFG.iconbase + encodeURIComponent(item.title) + (LCFG.iconext || '');
   return FAVICON(item.url);
 }

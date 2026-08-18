@@ -3,7 +3,8 @@ declare(strict_types=1);
 ///////////////////////
 $launcher_title='Launcher';
 $launcher_theme='auto'; #'light' (fix hell) | 'dark' (fix dunkel) | 'auto' (dynamisch, folgt System)
-$launcher_iconbase='https://raw.githubusercontent.com/florianthepro/pages/main/content/media/launcher/icons/'; #Icons: Dateiname = Kachel-Titel, sonst Favicon/Initialen
+$launcher_iconmode='auto'; #'favicon' (Icon = Favicon der Ziel-URL) | 'folder' (aus $launcher_iconbase) | 'auto' (Ordner falls gesetzt, sonst Favicon)
+$launcher_iconbase='https://raw.githubusercontent.com/florianthepro/pages/main/content/media/launcher/icons/'; #nur bei mode 'folder'/'auto': Dateiname = Kachel-Titel
 $launcher_iconext='.ico';
 $launcher_links=[ #Platzhalter, durch eigene ersetzen (group + url, optional title/icon)
   ['group'=>'general', 'title'=>'GitHub',    'url'=>'https://github.com/'],
