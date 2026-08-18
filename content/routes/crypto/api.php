@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
-#getitsec API - Katalog + Krypto-Operationen. Self-contained (libsodium + OpenSSL),
-#keine Abhaengigkeit zu api.getitsec.com. Antwort immer JSON.
+#crypto API - Katalog + Krypto-Operationen. Self-contained (libsodium + OpenSSL),
+#keine Abhaengigkeit zu externen Diensten. Antwort immer JSON.
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
 header('Cache-Control: no-store');

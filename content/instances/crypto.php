@@ -1,17 +1,17 @@
 <?php
 declare(strict_types=1);
 ///////////////////////
-$getitsec_title='GetItSec';
-$getitsec_theme='auto'; #'light' (fix hell) | 'dark' (fix dunkel) | 'auto' (dynamisch, folgt System)
-$getitsec_icon='https://raw.githubusercontent.com/florianthepro/pages/main/content/media/getitsec/index.svg';
+$crypto_title='Crypto Toolkit';
+$crypto_theme='auto'; #'light' (fix hell) | 'dark' (fix dunkel) | 'auto' (dynamisch, folgt System)
+$crypto_icon='https://raw.githubusercontent.com/florianthepro/pages/main/content/media/crypto/index.svg';
 
 $sharedVars=get_defined_vars();
 
 $yaml=<<<'YAML'
 license: "https://raw.githubusercontent.com/florianthepro/pages/main/LICENSE"
 blocked: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/blocked.html"
-index: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/getitsec/index.php"
-api: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/getitsec/api.php"
+index: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/crypto/index.php"
+api: "https://raw.githubusercontent.com/florianthepro/pages/main/content/routes/crypto/api.php"
 YAML;
 ///////////////////////
 $__loaderUrl='https://raw.githubusercontent.com/florianthepro/pages/main/content/loader/loader.php';

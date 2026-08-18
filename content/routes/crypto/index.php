@@ -1,16 +1,16 @@
 <?php
 declare(strict_types=1);
-$getitsec_theme=(isset($getitsec_theme)&&in_array($getitsec_theme,['light','dark'],true))?$getitsec_theme:'auto';
-$getitsec_title=(isset($getitsec_title)&&$getitsec_title!=='')?(string)$getitsec_title:'GetItSec';
+$crypto_theme=(isset($crypto_theme)&&in_array($crypto_theme,['light','dark'],true))?$crypto_theme:'auto';
+$crypto_title=(isset($crypto_title)&&$crypto_title!=='')?(string)$crypto_title:'Crypto Toolkit';
 function h($s){return htmlspecialchars((string)$s,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');}
-$dt=$getitsec_theme==='light'?' data-theme="light"':($getitsec_theme==='dark'?' data-theme="dark"':'');
+$dt=$crypto_theme==='light'?' data-theme="light"':($crypto_theme==='dark'?' data-theme="dark"':'');
 ?>
 <!doctype html>
 <html lang="de"<?= $dt ?>>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title><?= h($getitsec_title) ?></title>
+<title><?= h($crypto_title) ?></title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64' fill='none' stroke='%230a63ff' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='14' y='28' width='36' height='24' rx='4'/%3E%3Cpath d='M22 28v-6a10 10 0 0 1 20 0v6'/%3E%3Ccircle cx='32' cy='40' r='3'/%3E%3C/svg%3E">
 <style>
 :root{--bg:#ffffff;--fg:#141414;--muted:#5a5f66;--border:#d5d7dd;--panel:#f5f6f8;--panel2:#e9ebef;--panelhead:#eef0f3;--accent:#0a63ff;--accent-fg:#ffffff;--link:#0a58ca;--danger:#b3261e;--danger-bg:#fde7e7;--danger-fg:#7f1512;--success:#1a7f37;--success-bg:#e6f4ea;--ctrl-bg:#141414;--ctrl-fg:#ffffff;--shadow:rgba(0,0,0,.14);}
@@ -66,8 +66,8 @@ button{font:inherit}
 </head>
 <body>
 <header>
-  <span class="brand"><?= h($getitsec_title) ?></span>
-  <span class="sub">Krypto-Toolkit &middot; 9 Verfahren, self-contained</span>
+  <span class="brand"><?= h($crypto_title) ?></span>
+  <span class="sub">9 Verfahren &middot; Verschl&uuml;sselung, Signaturen, Hashing, Schl&uuml;ssel</span>
 </header>
 <div class="wrap">
   <nav class="side" id="side" aria-label="Verfahren"></nav>
