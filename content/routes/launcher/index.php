@@ -1,7 +1,13 @@
 <?php
-$launcher_theme = (isset($launcher_theme) && in_array($launcher_theme, ['light','dark'], true)) ? $launcher_theme : 'auto';
+declare(strict_types=1);
+
+#Kacheln kommen ausschliesslich aus der YAML der Instanz - kein Editor, kein
+#gespeicherter Zustand, der die YAML ueberdeckt. Geaendert wird nur die Instanz.
+$launcher_theme = (isset($launcher_theme) && in_array($launcher_theme, ['light', 'dark'], true)) ? $launcher_theme : 'auto';
 $launcher_title = (isset($launcher_title) && $launcher_title !== '') ? (string)$launcher_title : 'Launcher';
-function launcher_pipe_item($s) {
+
+function launcher_pipe_item(string $s): array
+{
     $p = array_map('trim', explode('|', $s));
     $item = ['title' => $p[0] ?? '', 'url' => $p[1] ?? '', 'icon' => $p[2] ?? ''];
     if ($item['url'] === '' && preg_match('#^[a-z][a-z0-9+.-]*://#i', $item['title'])) {
@@ -10,7 +16,9 @@ function launcher_pipe_item($s) {
     }
     return $item;
 }
-function launcher_inline_item($s) {
+
+function launcher_inline_item(string $s): array
+{
     $item = ['title' => '', 'url' => '', 'icon' => ''];
     if (preg_match_all('/([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(?:"([^"]*)"|\'([^\']*)\'|([^,}]+))/u', $s, $mm, PREG_SET_ORDER)) {
         foreach ($mm as $m) {
@@ -21,10 +29,14 @@ function launcher_inline_item($s) {
     }
     return $item;
 }
-function launcher_parse_yaml($text) {
+
+#Gruppe = Zeile die auf ":" endet, Kachel = "Name: URL" oder "Name: URL | Icon-URL".
+#"- {title:.., url:.., icon:..}" und "- Name | URL | Icon" werden ebenfalls gelesen.
+function launcher_parse_yaml(string $text): array
+{
     $out = [];
     $group = 'general';
-    foreach (preg_split("/\r\n|\n|\r/", (string)$text) as $line) {
+    foreach (preg_split("/\r\n|\n|\r/", $text) as $line) {
         $line = trim($line);
         if ($line === '' || $line[0] === '#') continue;
         if (preg_match('/^([^:#\-][^:]*):\s*$/u', $line, $m)) {
@@ -40,8 +52,7 @@ function launcher_parse_yaml($text) {
             $item = launcher_pipe_item(trim($m[1]) . ' | ' . trim($m[2]));
         }
         if (!$item || $item['url'] === '') continue;
-        $out[] = [
-            'group' => $group,
+        $out[$group][] = [
             'title' => $item['title'] !== '' ? $item['title'] : $item['url'],
             'url'   => $item['url'],
             'icon'  => $item['icon'],
@@ -49,25 +60,87 @@ function launcher_parse_yaml($text) {
     }
     return $out;
 }
-$__links = isset($launcher_yaml) ? launcher_parse_yaml($launcher_yaml) : [];
-if (!$__links && isset($launcher_links) && is_array($launcher_links)) {
-    foreach (array_values($launcher_links) as $l) {
+
+function launcher_site_root(string $url): string
+{
+    $p = parse_url($url);
+    if (!$p || empty($p['host'])) return '';
+    return ($p['scheme'] ?? 'https') . '://' . $p['host'] . (isset($p['port']) ? ':' . $p['port'] : '');
+}
+
+function launcher_abs_url(string $base, string $rel): string
+{
+    if ($rel === '') return '';
+    if (preg_match('#^(https?:|data:)#i', $rel)) return $rel;
+    $root = launcher_site_root($base);
+    if ($root === '') return '';
+    if ($rel[0] === '/') return $root . $rel;
+    $path = parse_url($base, PHP_URL_PATH);
+    $dir = is_string($path) ? preg_replace('#/[^/]*$#', '/', $path) : '/';
+    return $root . ($dir !== '' ? $dir : '/') . $rel;
+}
+
+function launcher_initials(string $text): string
+{
+    $parts = preg_split('/[\s._\-\/]+/u', trim($text), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+    $out = '';
+    foreach (array_slice($parts, 0, 2) as $p) $out .= mb_strtoupper(mb_substr($p, 0, 1, 'UTF-8'), 'UTF-8');
+    return $out !== '' ? $out : '?';
+}
+
+function launcher_color(string $seed): string
+{
+    $h = 0;
+    for ($i = 0, $n = strlen($seed); $i < $n; $i++) $h = (($h << 5) - $h + ord($seed[$i])) & 0x7FFFFFFF;
+    return 'hsl(' . ($h % 360) . ' 52% 46%)';
+}
+
+#Letzter Rueckfall: Initialen als SVG, damit auch ohne erreichbares Icon eine Kachel steht.
+function launcher_initials_icon(string $title, string $url): string
+{
+    $svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">'
+        . '<rect width="128" height="128" rx="26" fill="' . launcher_color(launcher_site_root($url) ?: $url) . '"/>'
+        . '<text x="64" y="66" fill="#ffffff" font-family="system-ui,-apple-system,Segoe UI,Roboto,Arial"'
+        . ' font-size="52" font-weight="600" text-anchor="middle" dominant-baseline="central">'
+        . htmlspecialchars(launcher_initials($title), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')
+        . '</text></svg>';
+    return 'data:image/svg+xml;charset=utf-8,' . rawurlencode($svg);
+}
+
+#Das Icon holt der Browser selbst von der Zielseite. Damit bekommen auch interne
+#Adressen ihr Icon, die der Server nicht erreicht - der Browser steht im selben Netz.
+function launcher_icon_candidates(array $item): array
+{
+    $out = [];
+    $own = launcher_abs_url($item['url'], $item['icon']);
+    if ($own !== '') $out[] = $own;
+    $root = launcher_site_root($item['url']);
+    if ($root !== '') $out[] = $root . '/favicon.ico';
+    $out[] = launcher_initials_icon($item['title'], $item['url']);
+    return $out;
+}
+
+function h($s): string
+{
+    return htmlspecialchars((string)$s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+
+$groups = isset($launcher_yaml) ? launcher_parse_yaml((string)$launcher_yaml) : [];
+if (!$groups && isset($launcher_links) && is_array($launcher_links)) {
+    foreach ($launcher_links as $l) {
         if (!is_array($l)) continue;
         $u = trim((string)($l['url'] ?? ''));
         if ($u === '') continue;
-        $__links[] = [
-            'group' => trim((string)($l['group'] ?? 'general')) ?: 'general',
+        $g = trim((string)($l['group'] ?? 'general')) ?: 'general';
+        $groups[$g][] = [
             'title' => trim((string)($l['title'] ?? $u)) ?: $u,
             'url'   => $u,
             'icon'  => trim((string)($l['icon'] ?? '')),
         ];
     }
 }
-$__jflags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT;
-$links_json = json_encode($__links, $__jflags);
-$theme_json = json_encode($launcher_theme, $__jflags);
-function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
-$htmlClass = $launcher_theme === 'dark' ? ' class="dark-mode-forced"' : ($launcher_theme === 'light' ? ' class="light-mode-forced"' : '');
+
+$htmlClass = $launcher_theme === 'dark' ? ' class="theme-dark"' : ($launcher_theme === 'light' ? ' class="theme-light"' : '');
 ?>
 <!doctype html>
 <html lang="de"<?= $htmlClass ?>>
@@ -78,466 +151,166 @@ $htmlClass = $launcher_theme === 'dark' ? ' class="dark-mode-forced"' : ($launch
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='8' y='8' width='20' height='20' rx='5' fill='%230ea5a4'/%3E%3Crect x='36' y='8' width='20' height='20' rx='5' fill='%230ea5a4'/%3E%3Crect x='8' y='36' width='20' height='20' rx='5' fill='%230ea5a4'/%3E%3Crect x='36' y='36' width='20' height='20' rx='5' fill='%230ea5a4'/%3E%3C/svg%3E" />
 <style>
   :root{
-    --bg: #0b1220;
-    --panel: #0f1724;
-    --muted: #9fb0c8;
-    --text: #e6eef8;
-    --tile-size: 96px;
-    --tile-radius: 22px;
-    --gap: 20px;
-    --max-width: 1100px;
-    --shadow: 0 12px 36px rgba(2,6,23,0.6);
-    --accent: #0ea5a4;
+    --bg:#f5f7fa;
+    --panel:#ffffff;
+    --text:#131922;
+    --muted:#5d6875;
+    --line:rgba(19,25,34,.12);
+    --shadow:0 6px 22px rgba(16,24,40,.09);
+    --shadow-hover:0 16px 38px rgba(16,24,40,.16);
+    --accent:#0ea5a4;
+    --tile:104px;
+    --radius:22px;
   }
-  @media (prefers-color-scheme: light) {
-    :root:not(.light-mode-forced):not(.dark-mode-forced){
-      --bg: #008080;
-      --panel: #c0c0c0;
-      --muted: #000080;
-      --text: #000000;
-      --shadow:
-        2px 2px 0 #000000,
-        -1px -1px 0 #ffffff;
-      --accent: #000080;
+  @media (prefers-color-scheme: dark){
+    :root:not(.theme-light){
+      --bg:#0b1220;
+      --panel:#111a2b;
+      --text:#e6eef8;
+      --muted:#9fb0c8;
+      --line:rgba(230,238,248,.12);
+      --shadow:0 10px 30px rgba(2,6,23,.55);
+      --shadow-hover:0 20px 46px rgba(2,6,23,.7);
     }
   }
-  :root.light-mode-forced {
-    --bg: #008080;
-    --panel: #c0c0c0;
-    --muted: #000080;
-    --text: #000000;
-    --shadow:
-      2px 2px 0 #000000,
-      -1px -1px 0 #ffffff;
-    --accent: #000080;
-  }
-  :root.dark-mode-forced {
-    --bg: #0b1220;
-    --panel: #0f1724;
-    --muted: #9fb0c8;
-    --text: #e6eef8;
-    --shadow: 0 12px 36px rgba(2, 6, 23, 0.6);
-    --accent: #0ea5a4;
+  :root.theme-dark{
+    --bg:#0b1220;
+    --panel:#111a2b;
+    --text:#e6eef8;
+    --muted:#9fb0c8;
+    --line:rgba(230,238,248,.12);
+    --shadow:0 10px 30px rgba(2,6,23,.55);
+    --shadow-hover:0 20px 46px rgba(2,6,23,.7);
   }
   *{box-sizing:border-box}
-  html,body{
-    height:100%;
-    margin:0;
-    font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;
-    background:var(--bg);
-    color:var(--text);
+  html,body{margin:0;min-height:100%}
+  body{
+    background:var(--bg);color:var(--text);
+    font:15px/1.5 Inter,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
     -webkit-font-smoothing:antialiased;
-    transition: background 0.3s ease, color 0.3s ease;
   }
-  .header{position:fixed;top:0;right:0;z-index:1000;padding:16px;display:flex;gap:12px}
-  .settings-btn{
-    background:var(--panel);border:1px solid rgba(127,127,127,0.25);color:var(--text);
-    padding:10px 12px;border-radius:10px;cursor:pointer;font-size:18px;display:flex;
-    align-items:center;justify-content:center;
-    transition:transform .14s ease, box-shadow .14s ease, background 0.3s ease, color 0.3s ease;
-    box-shadow:var(--shadow)
+  .wrap{max-width:1080px;margin:0 auto;padding:clamp(20px,5vw,56px) clamp(16px,4vw,32px) 64px}
+  .top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:clamp(20px,4vw,36px)}
+  h1{margin:0;font-size:clamp(20px,3vw,26px);font-weight:650;letter-spacing:-.01em}
+  .theme-btn{
+    background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:10px;
+    padding:8px 12px;font:inherit;font-size:14px;cursor:pointer;box-shadow:var(--shadow);
   }
-  .settings-btn:hover{transform:translateY(-2px);box-shadow:0 16px 40px rgba(0,0,0,0.3)}
-  .settings-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);display:none;z-index:999}
-  .settings-overlay.active{display:block}
-  .settings-panel{
-    position:fixed;top:0;right:0;height:100vh;width:300px;background:var(--panel);
-    box-shadow:-4px 0 20px rgba(0,0,0,0.3);transform:translateX(100%);transition:transform .3s ease;
-    z-index:1001;display:flex;flex-direction:column;padding:20px;color:var(--text);
+  .theme-btn:hover{border-color:var(--accent)}
+  .group{margin-bottom:clamp(24px,4vw,40px)}
+  .group h2{
+    margin:0 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line);
+    font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);
   }
-  .settings-panel.active{transform:translateX(0)}
-  .settings-panel h2{margin:0 0 20px 0;font-size:18px;color:var(--text);transition: color 0.3s ease}
-  .settings-option{
-    background:rgba(127,127,127,0.10);border:1px solid rgba(127,127,127,0.20);color:var(--text);
-    padding:12px 16px;border-radius:8px;cursor:pointer;font-size:14px;margin-bottom:10px;
-    transition:background .2s ease, color 0.3s ease;text-align:left
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:clamp(14px,2.4vw,22px)}
+  .tile{
+    display:flex;flex-direction:column;align-items:center;gap:9px;
+    text-decoration:none;color:inherit;padding:6px 2px;border-radius:16px;outline:none;
   }
-  .settings-option:hover{background:rgba(127,127,127,0.20)}
-  .settings-option.danger{color:#ff6b6b}
-  .settings-close{
-    background:transparent;border:0;color:var(--text);cursor:pointer;margin-top:auto;
-    padding:10px;font-size:14px;opacity:0.7;transition:opacity .2s, color 0.3s ease
-  }
-  .settings-close:hover{opacity:1}
-  .wrap{
-    min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;align-items:center;
-    justify-content:center;padding:clamp(16px, 4vw, 32px);
-    padding-top:calc(60px + clamp(8px, 2vh, 24px));padding-bottom:clamp(16px, 4vh, 40px);
-  }
-  .card{
-    width:100%;max-width:var(--max-width);
-    background:linear-gradient(180deg, rgba(127,127,127,0.04), rgba(0,0,0,0.06));
-    border-radius:16px;padding:28px;box-shadow:var(--shadow);display:flex;flex-direction:column;
-    align-items:center;gap:28px;border:1px solid rgba(127,127,127,0.12);backdrop-filter: blur(6px);
-    transition: background 0.3s ease, box-shadow 0.3s ease;
-  }
-  .title{font-size:16px;font-weight:600;letter-spacing:0.2px;color:var(--text);margin:0;display:block;transition: color 0.3s ease}
-  #sections-root{width:100%;display:flex;flex-direction:column;gap:28px}
-  .section{width:100%;display:flex;flex-direction:column;gap:12px}
-  .section-header{
-    display:flex;align-items:center;gap:10px;justify-content:space-between;padding-bottom:8px;
-    border-bottom:1px solid rgba(127,127,127,0.18);transition: border-color 0.3s ease;
-  }
-  .section h4{margin:0;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--muted);flex:1;transition: color 0.3s ease}
-  .section-add-btn{
-    background:transparent;border:0;color:var(--text);font-size:20px;line-height:1;cursor:pointer;
-    display:none;padding:0;width:24px;height:24px;flex-shrink:0;transition:transform .2s ease, color 0.3s ease;
-  }
-  .editor-mode .section-add-btn{display:block}
-  .section-add-btn:hover{transform:scale(1.1)}
-  .grid{
-    width:100%;display:grid;grid-template-columns:repeat(auto-fit, minmax(84px, 1fr));gap:var(--gap);
-    justify-items:center;align-items:start;padding:8px 6px;position:relative
-  }
-  .tile{display:block;width:100%;max-width:120px;text-align:center;text-decoration:none;outline:none;-webkit-tap-highlight-color: transparent;user-select:none}
+  .tile:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
   .icon{
-    width:var(--tile-size);height:var(--tile-size);border-radius:var(--tile-radius);
-    background:linear-gradient(180deg, rgba(127,127,127,0.06), rgba(0,0,0,0.06));
+    width:var(--tile);height:var(--tile);border-radius:var(--radius);
+    background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow);
     display:flex;align-items:center;justify-content:center;overflow:hidden;
-    border:1px solid rgba(127,127,127,0.12);transition:transform .14s ease, box-shadow .14s ease;
-    box-shadow:var(--shadow);position:relative
+    transition:transform .16s ease,box-shadow .16s ease;
   }
-  .tile:focus .icon,.tile:hover .icon{transform:translateY(-6px) scale(1.02);box-shadow:0 26px 60px rgba(2,6,23,0.6)}
-  .icon img{width:64px;height:64px;object-fit:cover;border-radius:14px;display:block;pointer-events:none;background:transparent}
-  .tile-title{display:block;margin-top:8px;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color 0.3s ease}
-  .tile-actions{position:absolute;top:4px;right:4px;display:none;gap:4px;z-index:100}
-  .editor-mode .tile-actions{display:flex}
-  .sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-  .dragging{opacity:0.6;transform:scale(1.02) rotate(-2deg);box-shadow:0 40px 80px rgba(0,0,0,0.45)}
-  .placeholder{width:var(--tile-size);height:var(--tile-size);border-radius:var(--tile-radius);border:2px dashed rgba(127,127,127,0.25);background:transparent;box-sizing:border-box}
-  .ctx-menu{
-    position:fixed;z-index:9999;background:var(--panel);color:var(--text);border:1px solid rgba(127,127,127,0.20);
-    border-radius:8px;box-shadow:0 8px 30px rgba(0,0,0,0.5);padding:6px;display:none;min-width:140px;font-size:14px;
-    transition: background 0.3s ease, color 0.3s ease;
+  .tile:hover .icon,.tile:focus-visible .icon{transform:translateY(-4px);box-shadow:var(--shadow-hover)}
+  .icon img{width:58%;height:58%;object-fit:contain;display:block}
+  .icon img.fill{width:100%;height:100%;object-fit:cover;border-radius:var(--radius)}
+  .label{
+    font-size:13px;color:var(--muted);text-align:center;max-width:100%;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   }
-  .ctx-menu button{display:block;width:100%;text-align:left;background:transparent;border:0;color:var(--text);padding:8px 10px;cursor:pointer;border-radius:6px;transition: color 0.3s ease}
-  .ctx-menu button:hover{background:rgba(127,127,127,0.12)}
-  .empty-hint{color:var(--muted);font-size:13px;text-align:center;padding:24px 8px}
-  .editor-indicator{
-    position:fixed;bottom:20px;left:20px;background:var(--accent);color:#fff;padding:10px 16px;
-    border-radius:999px;font-size:12px;font-weight:600;display:none;box-shadow:var(--shadow);z-index:500
-  }
-  .editor-mode .editor-indicator{display:block}
-  @media (max-width: 768px){
-    .wrap{justify-content:flex-start;align-items:stretch;padding-top:80px;padding-left:16px;padding-right:16px}
-    .card{max-width:100%;border-radius:12px;box-shadow:0 8px 20px rgba(0,0,0,0.35);padding:20px}
-  }
+  .empty{color:var(--muted);padding:40px 0;text-align:center}
+  .empty code{font-size:13px}
   @media (max-width:480px){
-    :root{--tile-size:80px;--tile-radius:18px}
-    .card{padding:18px;box-shadow:0 4px 14px rgba(0,0,0,0.3)}
-    .settings-panel{width:100%}
+    :root{--tile:84px;--radius:18px}
+    .grid{grid-template-columns:repeat(auto-fill,minmax(92px,1fr))}
   }
 </style>
 </head>
 <body>
-<div class="header">
-<button id="settingsBtn" class="settings-btn" aria-label="Einstellungen">&#9881;</button>
-</div>
-<div id="settingsOverlay" class="settings-overlay"></div>
-<div id="settingsPanel" class="settings-panel" role="dialog" aria-label="Einstellungen">
-<h2>Einstellungen</h2>
-<button id="themeToggle" class="settings-option">Theme</button>
-<button id="editorToggle" class="settings-option">&#9998; Editor-Modus</button>
-<button id="resetBtn" class="settings-option danger">&#128260; Zur&uuml;cksetzen</button>
-<button id="closeSettings" class="settings-close">Schlie&szlig;en</button>
-</div>
-<div class="editor-indicator">&#9998; Editor-Modus aktiv</div>
 <div class="wrap">
-<main class="card" role="main" aria-label="Launcher">
-<h1 class="title"><?= h($launcher_title) ?></h1>
-<div id="sections-root"></div>
-<span class="sr-only" id="instructions">Navigiere mit Tab zu einem Icon und dr&uuml;cke Enter, um die Seite in einem neuen Tab zu &ouml;ffnen. Einstellungen oben rechts: Editor-Modus, Theme, Zur&uuml;cksetzen.</span>
-</main>
+  <header class="top">
+    <h1><?= h($launcher_title) ?></h1>
+    <button id="themeBtn" class="theme-btn" type="button" aria-label="Hell/Dunkel umschalten">Theme</button>
+  </header>
+
+<?php if (!$groups): ?>
+  <p class="empty">Keine Eintr&auml;ge. Kacheln in <code>$launcher_yaml</code> der Instanz eintragen.</p>
+<?php else: ?>
+<?php foreach ($groups as $name => $items): ?>
+  <section class="group">
+    <h2><?= h($name) ?></h2>
+    <div class="grid">
+<?php foreach ($items as $item):
+        $cands = launcher_icon_candidates($item);
+        $first = array_shift($cands);
+?>
+      <a class="tile" href="<?= h($item['url']) ?>" target="_blank" rel="noopener noreferrer">
+        <span class="icon">
+          <img src="<?= h($first) ?>" alt="" loading="lazy" decoding="async"
+               data-fallback="<?= h(json_encode(array_values($cands), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?>" />
+        </span>
+        <span class="label"><?= h($item['title']) ?></span>
+      </a>
+<?php endforeach; ?>
+    </div>
+  </section>
+<?php endforeach; ?>
+<?php endif; ?>
 </div>
-<div id="ctxMenu" class="ctx-menu" role="menu" aria-hidden="true"></div>
 <script>
-const COOKIE_NAME = 'launcher_order';
-const THEME_COOKIE = 'launcher_theme';
-const DEFAULT_LINKS = <?= $links_json ?>;
-const INSTANCE_THEME = <?= $theme_json ?>;
+(function(){
+  "use strict";
 
-function setCookie(name, value){ try{ localStorage.setItem(name, value); }catch(e){} }
-function getCookie(name){ try{ return localStorage.getItem(name); }catch(e){ return null; } }
-function eraseCookie(name){ try{ localStorage.removeItem(name); }catch(e){} }
-
-/* Icons holt der Browser direkt von der Ziel-Seite (keine lokalen Bilddateien, kein
-   Fremddienst). Damit funktionieren auch interne Seiten, die der Server nicht erreicht:
-   der Browser sitzt im lokalen Netz und laedt das Icon von dort.
-   Reihenfolge: 1) icon aus der YAML  2) /favicon.ico der Seite  3) Initialen. */
-function iconCandidates(item){
-  const out = [];
-  if (item.iconUrl) {
-    const u = String(item.iconUrl).trim();
-    if (/^(https?:|data:)/i.test(u)) out.push(u);
-    else { try { out.push(new URL(u, item.url).href); } catch(e){} }
-  }
-  try { out.push(new URL('/favicon.ico', item.url).href); } catch(e){}
-  return out;
-}
-function readDefaultLinks(){
-  const result = {};
-  DEFAULT_LINKS.forEach(l => {
-    const g = (l.group || 'general');
-    if (!result[g]) result[g] = [];
-    result[g].push({ title: l.title || l.url, url: l.url, iconUrl: l.icon || null });
+  // Icon-Kette: laedt ein Kandidat nicht, kommt der naechste dran.
+  document.querySelectorAll('img[data-fallback]').forEach(function(img){
+    var list;
+    try { list = JSON.parse(img.getAttribute('data-fallback')) || []; } catch(e){ list = []; }
+    var i = 0;
+    img.addEventListener('error', function(){
+      if (i < list.length) { img.src = list[i++]; }
+      else { img.onerror = null; }
+    });
+    img.addEventListener('load', function(){
+      // Initialen-SVG fuellt die Kachel ganz aus, echte Favicons bleiben mittig.
+      if (img.src.indexOf('data:image/svg+xml') === 0) img.classList.add('fill');
+      else img.classList.remove('fill');
+    });
   });
-  return result;
-}
-function loadLinks(){
-  const raw = getCookie(COOKIE_NAME);
-  if (raw) { try { const p = JSON.parse(raw); if (p && typeof p === 'object') return p; } catch(e){} }
-  return readDefaultLinks();
-}
-function saveLinks(links){ try { setCookie(COOKIE_NAME, JSON.stringify(links)); } catch(e){ console.error('Speichern fehlgeschlagen', e); } }
 
-let allLinks = loadLinks();
-let editorMode = false;
-const grids = {};
-const sectionsRoot = document.getElementById('sections-root');
-const ctxMenu = document.getElementById('ctxMenu');
-const settingsBtn = document.getElementById('settingsBtn');
-const settingsPanel = document.getElementById('settingsPanel');
-const settingsOverlay = document.getElementById('settingsOverlay');
-const themeToggle = document.getElementById('themeToggle');
-const editorToggle = document.getElementById('editorToggle');
-const resetBtn = document.getElementById('resetBtn');
-const closeSettings = document.getElementById('closeSettings');
+  var KEY = 'launcher_theme';
+  var root = document.documentElement;
+  var btn = document.getElementById('themeBtn');
 
-function prefersLight(){ try{ return window.matchMedia('(prefers-color-scheme: light)').matches; }catch(e){ return false; } }
-function applyTheme(mode){
-  const el = document.documentElement;
-  el.classList.remove('light-mode-forced','dark-mode-forced');
-  if (mode === 'light') el.classList.add('light-mode-forced');
-  else if (mode === 'dark') el.classList.add('dark-mode-forced');
-  updateThemeLabel();
-}
-function isLightNow(){
-  const el = document.documentElement;
-  if (el.classList.contains('light-mode-forced')) return true;
-  if (el.classList.contains('dark-mode-forced')) return false;
-  return prefersLight();
-}
-function updateThemeLabel(){ themeToggle.textContent = isLightNow() ? '🌙 Dark Mode' : '☀️ Light Mode'; }
-function initializeTheme(){
-  const saved = getCookie(THEME_COOKIE);
-  let mode = (saved === 'light' || saved === 'dark') ? saved
-           : ((INSTANCE_THEME === 'light' || INSTANCE_THEME === 'dark') ? INSTANCE_THEME : '');
-  applyTheme(mode);
-}
-function toggleTheme(){
-  const next = isLightNow() ? 'dark' : 'light';
-  applyTheme(next);
-  setCookie(THEME_COOKIE, next);
-}
-
-function openSettingsPanel(){ settingsPanel.classList.add('active'); settingsOverlay.classList.add('active'); }
-function closeSettingsPanel(){ settingsPanel.classList.remove('active'); settingsOverlay.classList.remove('active'); }
-settingsBtn.addEventListener('click', openSettingsPanel);
-closeSettings.addEventListener('click', closeSettingsPanel);
-settingsOverlay.addEventListener('click', closeSettingsPanel);
-themeToggle.addEventListener('click', toggleTheme);
-editorToggle.addEventListener('click', toggleEditorMode);
-resetBtn.addEventListener('click', resetLauncher);
-
-function toggleEditorMode(){
-  editorMode = !editorMode;
-  if (editorMode) { document.body.classList.add('editor-mode'); editorToggle.textContent = '✏️ Editor-Modus beenden'; }
-  else { document.body.classList.remove('editor-mode'); editorToggle.textContent = '✏️ Editor-Modus'; closeContextMenu(); }
-  buildAllGrids();
-}
-function resetLauncher(){
-  if (!confirm('Alle Einstellungen und Ordnung zurücksetzen? Diese Aktion kann nicht rückgängig gemacht werden.')) return;
-  eraseCookie(COOKIE_NAME); eraseCookie(THEME_COOKIE);
-  allLinks = readDefaultLinks();
-  editorMode = false; document.body.classList.remove('editor-mode');
-  editorToggle.textContent = '✏️ Editor-Modus';
-  initializeTheme();
-  closeSettingsPanel(); closeContextMenu();
-  buildAllGrids();
-}
-
-function buildSections(){
-  const order = Object.keys(allLinks);
-  sectionsRoot.innerHTML = '';
-  for (const k in grids) delete grids[k];
-  if (order.length === 0) {
-    const hint = document.createElement('div');
-    hint.className = 'empty-hint';
-    hint.textContent = 'Keine Einträge. Editor-Modus aktivieren und Links hinzufügen.';
-    sectionsRoot.appendChild(hint);
-    return;
+  function prefersDark(){
+    try { return window.matchMedia('(prefers-color-scheme: dark)').matches; } catch(e){ return false; }
   }
-  order.forEach(gid => {
-    const sec = document.createElement('div'); sec.className = 'section';
-    const hdr = document.createElement('div'); hdr.className = 'section-header';
-    const h4 = document.createElement('h4'); h4.textContent = gid;
-    const add = document.createElement('button'); add.type = 'button'; add.className = 'section-add-btn';
-    add.textContent = '+'; add.dataset.section = gid; add.setAttribute('aria-label', 'App zu ' + gid + ' hinzufügen');
-    add.addEventListener('click', e => { e.preventDefault(); handleAdd(gid); });
-    hdr.appendChild(h4); hdr.appendChild(add);
-    const grid = document.createElement('nav'); grid.className = 'grid'; grid.setAttribute('aria-label', gid + ' Apps');
-    sec.appendChild(hdr); sec.appendChild(grid);
-    sectionsRoot.appendChild(sec);
-    grids[gid] = grid;
-    grid.addEventListener('dragover', e => onGridDragOver(e, gid));
-    grid.addEventListener('drop', e => onGridDrop(e, gid));
-  });
-}
-function buildAllGrids(){ buildSections(); Object.keys(grids).forEach(gid => buildGrid(gid)); }
-function buildGrid(gid){
-  const grid = grids[gid]; if (!grid) return;
-  const links = allLinks[gid] || [];
-  grid.innerHTML = '';
-  links.forEach((item, idx) => {
-    const a = document.createElement('a');
-    a.className = 'tile'; a.href = item.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
-    a.setAttribute('aria-label', item.title + ' in neuem Tab öffnen');
-    a.dataset.index = String(idx); a.dataset.section = gid; a.draggable = editorMode;
-    const icon = document.createElement('div'); icon.className = 'icon';
-    const img = document.createElement('img'); img.alt = item.title + ' icon'; img.loading = 'lazy';
-    const cands = iconCandidates(item); let ci = 0;
-    img.onerror = () => { ci++; if (ci < cands.length) { img.src = cands[ci]; } else { img.onerror = null; img.src = initialsDataUrl(item.title, 128, colorFromHost(item.url)); } };
-    img.src = cands.length ? cands[0] : initialsDataUrl(item.title, 128, colorFromHost(item.url));
-    icon.appendChild(img);
-    a.appendChild(icon);
-    const t = document.createElement('span'); t.className = 'tile-title'; t.textContent = item.title; a.appendChild(t);
-    a.addEventListener('contextmenu', e => { if (!editorMode) return; e.preventDefault(); e.stopPropagation(); openContextMenu(e.clientX, e.clientY, gid, idx); });
-    a.addEventListener('click', e => { if (editorMode) { e.preventDefault(); e.stopImmediatePropagation(); } });
-    a.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (!editorMode) window.open(item.url, '_blank', 'noopener'); } });
-    if (editorMode) {
-      a.addEventListener('dragstart', e => onDragStart(e, gid, idx));
-      a.addEventListener('dragend', onDragEnd);
-      a.addEventListener('dragover', onTileDragOver);
-      a.addEventListener('drop', e => onTileDrop(e, gid));
-    } else {
-      a.addEventListener('dragstart', e => e.preventDefault());
-    }
-    grid.appendChild(a);
-  });
-}
-
-function openContextMenu(x, y, gid, idx){
-  ctxMenu.innerHTML = '';
-  const editBtn = document.createElement('button'); editBtn.type = 'button'; editBtn.textContent = '✏️ Bearbeiten';
-  editBtn.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); closeContextMenu(); editLink(gid, idx); });
-  ctxMenu.appendChild(editBtn);
-  const delBtn = document.createElement('button'); delBtn.type = 'button'; delBtn.textContent = '🗑️ Entfernen';
-  delBtn.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); closeContextMenu(); deleteLink(gid, idx); });
-  ctxMenu.appendChild(delBtn);
-  ctxMenu.style.left = x + 'px'; ctxMenu.style.top = y + 'px'; ctxMenu.style.display = 'block'; ctxMenu.setAttribute('aria-hidden', 'false');
-}
-function closeContextMenu(){ ctxMenu.style.display = 'none'; ctxMenu.setAttribute('aria-hidden', 'true'); }
-document.addEventListener('click', () => closeContextMenu());
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeContextMenu(); });
-
-function editLink(gid, idx){
-  const item = allLinks[gid][idx];
-  const newTitle = prompt('App-Name:', item.title); if (newTitle === null) return;
-  let newUrl = prompt('URL:', item.url); if (newUrl === null) return;
-  try { if (!/^https?:\/\//i.test(newUrl)) newUrl = 'https://' + newUrl; new URL(newUrl); } catch(e){ alert('Ungültige URL'); return; }
-  let newIconUrl = prompt('Icon-URL (optional, sonst automatisch):', item.iconUrl || '');
-  if (newIconUrl !== null) { newIconUrl = newIconUrl.trim(); } else { newIconUrl = item.iconUrl; }
-  allLinks[gid][idx] = { title: newTitle.trim(), url: newUrl.trim(), iconUrl: newIconUrl || null };
-  saveLinks(allLinks); buildAllGrids();
-}
-function deleteLink(gid, idx){
-  const item = allLinks[gid][idx];
-  if (!confirm('"' + item.title + '" wirklich entfernen?')) return;
-  allLinks[gid].splice(idx, 1);
-  saveLinks(allLinks); buildAllGrids();
-}
-function handleAdd(gid){
-  const title = prompt('App-Name (z.B. GitHub):'); if (!title) return;
-  let url = prompt('URL (mit https://):'); if (!url) return;
-  try { if (!/^https?:\/\//i.test(url)) url = 'https://' + url; new URL(url); } catch(e){ alert('Ungültige URL'); return; }
-  let iconUrl = prompt('Icon-URL (optional, sonst automatisch):');
-  iconUrl = iconUrl ? iconUrl.trim() : null;
-  if (!allLinks[gid]) allLinks[gid] = [];
-  allLinks[gid].push({ title: title.trim(), url: url.trim(), iconUrl: iconUrl || null });
-  saveLinks(allLinks); buildAllGrids();
-}
-
-let dragState = null;
-let placeholderEl = null;
-function createPlaceholder(){ const el = document.createElement('div'); el.className = 'placeholder'; return el; }
-function onDragStart(e, gid, idx){
-  if (!editorMode) return;
-  dragState = { fromSection: gid, fromIndex: idx };
-  e.currentTarget.classList.add('dragging');
-  e.dataTransfer.effectAllowed = 'move';
-  const ghost = document.createElement('canvas'); ghost.width = 1; ghost.height = 1;
-  e.dataTransfer.setDragImage(ghost, 0, 0);
-}
-function onDragEnd(e){
-  e.currentTarget.classList.remove('dragging'); dragState = null;
-  if (placeholderEl && placeholderEl.parentElement) placeholderEl.parentElement.removeChild(placeholderEl);
-  placeholderEl = null;
-}
-function onTileDragOver(e){
-  if (!editorMode || !dragState) return;
-  e.preventDefault();
-  const tile = e.currentTarget; const grid = tile.parentElement;
-  if (!placeholderEl) placeholderEl = createPlaceholder();
-  if (!grid.contains(placeholderEl)) { grid.insertBefore(placeholderEl, tile); }
-  else {
-    const rect = tile.getBoundingClientRect(); const offset = e.clientY - rect.top;
-    if (offset > rect.height / 2) grid.insertBefore(placeholderEl, tile.nextSibling);
-    else grid.insertBefore(placeholderEl, tile);
+  function isDark(){
+    if (root.classList.contains('theme-dark')) return true;
+    if (root.classList.contains('theme-light')) return false;
+    return prefersDark();
   }
-}
-function onTileDrop(e, targetGid){ if (!editorMode || !dragState) return; e.preventDefault(); applyReorder(targetGid); }
-function onGridDragOver(e, targetGid){
-  if (!editorMode || !dragState) return;
-  e.preventDefault();
-  const grid = grids[targetGid];
-  if (!placeholderEl) placeholderEl = createPlaceholder();
-  if (!grid.contains(placeholderEl)) grid.appendChild(placeholderEl);
-}
-function onGridDrop(e, targetGid){ if (!editorMode || !dragState) return; e.preventDefault(); applyReorder(targetGid); }
-function applyReorder(targetGid){
-  if (!dragState) return;
-  const fromSection = dragState.fromSection; const fromIndex = dragState.fromIndex;
-  const fromArray = allLinks[fromSection];
-  if (!fromArray || fromIndex < 0 || fromIndex >= fromArray.length) { dragState = null; return; }
-  const targetGrid = grids[targetGid]; const children = Array.from(targetGrid.children);
-  let targetIndex = placeholderEl ? children.indexOf(placeholderEl) : children.length;
-  if (targetIndex === -1) targetIndex = children.length;
-  const item = fromArray.splice(fromIndex, 1)[0];
-  if (fromSection === targetGid && fromIndex < targetIndex) targetIndex--;
-  if (!allLinks[targetGid]) allLinks[targetGid] = [];
-  allLinks[targetGid].splice(targetIndex, 0, item);
-  saveLinks(allLinks); dragState = null;
-  if (placeholderEl && placeholderEl.parentElement) placeholderEl.parentElement.removeChild(placeholderEl);
-  placeholderEl = null;
-  buildAllGrids();
-}
+  function apply(mode){
+    root.classList.remove('theme-light','theme-dark');
+    if (mode === 'light' || mode === 'dark') root.classList.add('theme-' + mode);
+    btn.textContent = isDark() ? 'Hell' : 'Dunkel';
+  }
 
-function initialsDataUrl(text, size = 128, bg = '#2b6cb0'){
-  const initials = (text || '').split(/\s+/).slice(0, 2).map(s => s[0]).join('').toUpperCase() || '?';
-  const canvas = document.createElement('canvas'); canvas.width = size; canvas.height = size;
-  const ctx = canvas.getContext('2d'); const r = Math.floor(size * 0.18);
-  ctx.fillStyle = bg; roundRect(ctx, 0, 0, size, size, r); ctx.fill();
-  ctx.fillStyle = 'rgba(255,255,255,0.06)'; roundRect(ctx, 0, 0, size, size, r); ctx.fill();
-  ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.font = 'bold ' + Math.floor(size * 0.42) + 'px system-ui, -apple-system, "Segoe UI", Roboto, Arial';
-  ctx.fillText(initials, size / 2, size / 2 + Math.floor(size * 0.02));
-  return canvas.toDataURL('image/png');
-}
-function roundRect(ctx, x, y, w, h, r){
-  ctx.beginPath(); ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
-}
-function colorFromHost(host){ let h = 0; const str = String(host || ''); for (let i = 0; i < str.length; i++){ h = (h << 5) - h + str.charCodeAt(i); h |= 0; } return 'hsl(' + (Math.abs(h) % 360) + ' 60% 45%)'; }
+  // Vorgabe der Instanz steht schon im <html>; eine eigene Wahl des Nutzers geht vor.
+  var instance = root.classList.contains('theme-dark') ? 'dark'
+               : root.classList.contains('theme-light') ? 'light' : '';
+  var saved = null;
+  try { saved = localStorage.getItem(KEY); } catch(e){}
+  apply(saved === 'light' || saved === 'dark' ? saved : instance);
 
-initializeTheme();
-buildAllGrids();
-window.Launcher = {
-  add(title, url, gid = 'general'){ if (!allLinks[gid]) allLinks[gid] = []; allLinks[gid].push({ title, url, iconUrl: null }); saveLinks(allLinks); buildAllGrids(); },
-  reset(){ resetLauncher(); },
-  getOrder(){ return JSON.parse(JSON.stringify(allLinks)); },
-  toggleEditorMode(on){ if (typeof on === 'boolean') { if (on !== editorMode) toggleEditorMode(); } else { toggleEditorMode(); } }
-};
+  btn.addEventListener('click', function(){
+    var next = isDark() ? 'light' : 'dark';
+    apply(next);
+    try { localStorage.setItem(KEY, next); } catch(e){}
+  });
+})();
 </script>
 </body>
 </html>
