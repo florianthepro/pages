@@ -1,1187 +1,168 @@
 <?php
 declare(strict_types=1);
 
-ini_set('display_errors','0');
-ini_set('log_errors','1');
-error_reporting(E_ALL);
+const DATA_FILE = __DIR__ . '/masks.json';
+const MAX_POST_BYTES = 2097152;
+const MAX_MASKS = 500;
+const MAX_FIELDS = 200;
+const MAX_STEPS = 100;
+const MAX_VARIABLES = 100;
 
-const DATA_FILE=__DIR__.'/masks.json';
-const MAX_POST_SIZE=2097152;
-
-session_name('znuny_masks');
-session_set_cookie_params([
-'lifetime'=>0,
-'path'=>'/',
-'secure'=>!empty($_SERVER['HTTPS'])&&$_SERVER['HTTPS']!=='off',
-'httponly'=>true,
-'samesite'=>'Strict'
-]);
+$isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
+session_set_cookie_params(['httponly'=>true,'secure'=>$isHttps,'samesite'=>'Strict','path'=>'/']);
 session_start();
-
+header('Content-Type: text/html; charset=UTF-8');
+header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'self'; form-action 'self'");
 header('X-Content-Type-Options: nosniff');
+header('Referrer-Policy: no-referrer');
 header('X-Frame-Options: SAMEORIGIN');
-header('Referrer-Policy: same-origin');
+if (!isset($_SESSION['csrf'])) $_SESSION['csrf'] = bin2hex(random_bytes(32));
 
-function html($value):string{
-return htmlspecialchars((string)$value,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
+function h(string $v): string { return htmlspecialchars($v, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
+function id(string $prefix): string { return $prefix . '-' . bin2hex(random_bytes(8)); }
+function s(mixed $v, int $max=5000): string { $text=trim(is_scalar($v)?(string)$v:''); return function_exists('mb_substr') ? mb_substr($text,0,$max,'UTF-8') : substr($text,0,$max); }
+function baseFields(): array {
+    return [
+      ['id'=>'field-type','key'=>'Type','label'=>'Type','type'=>'select','values'=>['Change','Compliance','Incident','Incident:Major','Invastigation','Operation&Maintenance','Problem','RfC','RMA','ServiceRequest','SPAM','Unclassified'],'required'=>true],
+      ['id'=>'field-queue','key'=>'Queue','label'=>'To queue','type'=>'select','values'=>['Consulting','RMA','SPAM','Support'],'required'=>true],
+      ['id'=>'field-service','key'=>'Service','label'=>'Service','type'=>'select','values'=>['Basic Support','Extra Support','Internal','Managed Service'],'required'=>true]
+    ];
 }
+function freshData(): array { return ['configuration'=>['fields'=>baseFields(),'linkTypes'=>['Normal','ParentChild']],'masks'=>[]]; }
+function normType(mixed $v): string { $x=s($v,30); if($x==='textarea')$x='text'; return in_array($x,['text','select','number'],true)?$x:'text'; }
+function cleanValues(mixed $v): array {
+    if (is_string($v)) $v=preg_split('/\R/u',$v) ?: [];
+    if (!is_array($v)) return [];
+    $out=[]; foreach(array_slice($v,0,200) as $x){$x=s($x,200);if($x!==''&&!in_array($x,$out,true))$out[]=$x;} return $out;
+}
+function migrate(array $raw): array {
+    $cfg=$raw['configuration']??$raw['config']??[];
+    if (!is_array($cfg)) throw new RuntimeException('Die vorhandene Konfiguration kann nicht zuverlässig gelesen werden. Die Originaldatei wurde nicht verändert.');
+    $oldFields=$cfg['fields']??$cfg['lists']??[];
+    $fields=[];
+    if (is_array($oldFields)) foreach(array_slice($oldFields,0,MAX_FIELDS) as $f){
+      if(!is_array($f))continue; $key=s($f['key']??$f['technicalName']??$f['field']??$f['name']??'',100); if($key==='')continue;
+      $fields[]=['id'=>s($f['id']??'',100)?:id('field'),'key'=>$key,'label'=>s($f['label']??$f['name']??$key,160),'type'=>normType($f['type']??'text'),'values'=>cleanValues($f['values']??$f['options']??[]),'required'=>(bool)($f['required']??in_array($key,['Queue','State','Priority'],true))];
+    }
+    $fixed=baseFields(); foreach($fixed as &$fixedField){foreach($fields as $oldField)if($oldField['key']===$fixedField['key']){break;}} unset($fixedField); $fields=$fixed;
+    $links=cleanValues($cfg['linkTypes']??$cfg['links']??['Normal','ParentChild']); if(!$links)$links=['Normal','ParentChild'];
+    $masks=[];
+    foreach(array_slice(is_array($raw['masks']??null)?$raw['masks']:[],0,MAX_MASKS) as $m){
+      if(!is_array($m))continue; $vars=[];
+      foreach(array_slice(is_array($m['variables']??null)?$m['variables']:[],0,MAX_VARIABLES) as $v){if(!is_array($v))continue;$name=s($v['name']??'',120);if($name===''||$name==='Owner')continue;$vars[]=['id'=>s($v['id']??'',100)?:id('variable'),'name'=>$name,'type'=>normType($v['type']??'text'),'values'=>cleanValues($v['values']??[]),'prefill'=>s($v['prefill']??$v['default']??'',5000),'minimum'=>isset($v['minimum'])&&$v['minimum']!==''?(float)$v['minimum']:null,'maximum'=>isset($v['maximum'])&&$v['maximum']!==''?(float)$v['maximum']:null,'required'=>(bool)($v['required']??false)];}
+      $steps=[]; foreach(array_slice(is_array($m['steps']??null)?$m['steps']:[],0,MAX_STEPS) as $st){if(!is_array($st))continue;$fields2=[];foreach(array_slice(is_array($st['fields']??null)?$st['fields']:[],0,MAX_FIELDS) as $sf){if(!is_array($sf))continue;$key=s($sf['key']??$sf['field']??$sf['technicalName']??$sf['name']??'',100);if($key==='')continue;$fields2[]=['id'=>s($sf['id']??'',100)?:id('step-field'),'key'=>$key,'value'=>s($sf['value']??'',5000),'enabled'=>(bool)($sf['enabled']??true)];}$ln=[];foreach(array_slice(is_array($st['links']??null)?$st['links']:[],0,20) as $l){if(!is_array($l))continue;$ln[]=['id'=>s($l['id']??'',100)?:id('link'),'object'=>s($l['object']??$l['objectType']??'Ticket',100),'type'=>s($l['type']??$l['linkType']??'Normal',100),'direction'=>s($l['direction']??'Target',40),'target'=>s($l['target']??'',5000)];}$steps[]=['id'=>s($st['id']??'',100)?:id('step'),'action'=>s($st['action']??'free',50),'subject'=>s($st['subject']??'',5000),'body'=>s($st['body']??$st['text']??'',20000),'fields'=>$fields2,'links'=>$ln,'meta'=>is_array($st['meta']??null)?$st['meta']:[]];}
+      if(!$steps)$steps[]=['id'=>id('step'),'action'=>'ticket-create','subject'=>'','body'=>'','fields'=>[],'links'=>[],'meta'=>[]]; $steps[0]['action']='ticket-create';
+      $masks[]=['id'=>s($m['id']??'',100)?:id('mask'),'name'=>s($m['name']??'Unbenannte Maske',160),'description'=>s($m['description']??'',1000),'published'=>true,'variables'=>$vars,'steps'=>$steps,'updatedAt'=>s($m['updatedAt']??'',40)?:date(DATE_ATOM)];
+    }
+    return ['configuration'=>['fields'=>$fields,'linkTypes'=>$links],'masks'=>$masks];
+}
+function loadData(): array {
+    if(!file_exists(DATA_FILE)){saveData(freshData());return freshData();}
+    $txt=file_get_contents(DATA_FILE); if($txt===false)throw new RuntimeException('masks.json konnte nicht gelesen werden.');
+    try{$raw=json_decode($txt,true,512,JSON_THROW_ON_ERROR);}catch(JsonException){throw new RuntimeException('masks.json enthält ungültiges JSON. Die Datei wurde nicht verändert.');}
+    if(!is_array($raw))throw new RuntimeException('masks.json besitzt kein gültiges Grundformat.'); return migrate($raw);
+}
+function saveData(array $data): void {
+    $json=json_encode($data,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
+    $lock=fopen(DATA_FILE.'.lock','c'); if(!$lock||!flock($lock,LOCK_EX))throw new RuntimeException('Speichersperre konnte nicht gesetzt werden.');
+    $tmp=DATA_FILE.'.tmp.'.bin2hex(random_bytes(4)); try{if(file_put_contents($tmp,$json."\n",LOCK_EX)===false)throw new RuntimeException('Temporäre Datei konnte nicht geschrieben werden.');if(!rename($tmp,DATA_FILE))throw new RuntimeException('masks.json konnte nicht atomar ersetzt werden.');}finally{if(file_exists($tmp))@unlink($tmp);flock($lock,LOCK_UN);fclose($lock);}
+}
+function postJson(): array { if((int)($_SERVER['CONTENT_LENGTH']??0)>MAX_POST_BYTES)throw new RuntimeException('POST-Daten sind zu groß.'); $raw=file_get_contents('php://input');$p=json_decode($raw?:'[]',true,512,JSON_THROW_ON_ERROR);if(!is_array($p))throw new RuntimeException('Ungültige Anfrage.');if(!hash_equals($_SESSION['csrf'],s($p['csrf']??'',128)))throw new RuntimeException('Ungültiges CSRF-Token.');return $p; }
+function actionName(string $a): string {return ['ticket-create'=>'Ticket erstellen','ticket-edit'=>'Ticket bearbeiten','note'=>'Textfeld','email'=>'E-Mail hinzufügen','phone'=>'Telefonartikel hinzufügen','customer'=>'Kunde ändern','queue'=>'Queue ändern','owner'=>'Besitzer ändern','responsible'=>'Verantwortlichen ändern','state'=>'Status ändern','priority'=>'Priorität ändern','type'=>'Typ ändern','service'=>'Service ändern','sla'=>'SLA ändern','field-set'=>'Feld setzen','link'=>'Verknüpfen','close'=>'Ticket schließen','free'=>'Freier Schritt'][$a]??'Freier Schritt';}
 
-function text($value,int $limit=30000):string{
-if(!is_string($value)){
-return '';
-}
-$value=trim(str_replace(chr(0),'',$value));
-if(function_exists('mb_substr')){
-return mb_substr($value,0,$limit,'UTF-8');
-}
-return substr($value,0,$limit);
-}
-
-function identifier():string{
-try{
-return bin2hex(random_bytes(12));
-}catch(Throwable $exception){
-return str_replace('.','',uniqid('',true));
-}
-}
-
-function emptyData():array{
-return ['masks'=>[]];
-}
-
-function initializeStorage():void{
-if(is_file(DATA_FILE)){
-return;
-}
-$json=json_encode(
-emptyData(),
-JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES
-);
-if($json===false||file_put_contents(DATA_FILE,$json,LOCK_EX)===false){
-http_response_code(500);
-exit('masks.json konnte nicht angelegt werden.');
-}
-@chmod(DATA_FILE,0660);
-}
-
-function loadData():array{
-initializeStorage();
-
-$handle=@fopen(DATA_FILE,'rb');
-if($handle===false){
-http_response_code(500);
-exit('masks.json konnte nicht geöffnet werden.');
-}
-
-if(!flock($handle,LOCK_SH)){
-fclose($handle);
-http_response_code(500);
-exit('masks.json konnte nicht gesperrt werden.');
-}
-
-$json=stream_get_contents($handle);
-flock($handle,LOCK_UN);
-fclose($handle);
-
-$data=json_decode((string)$json,true);
-if(json_last_error()!==JSON_ERROR_NONE||!is_array($data)){
-http_response_code(500);
-exit('masks.json enthält ungültiges JSON.');
-}
-
-if(!isset($data['masks'])||!is_array($data['masks'])){
-$data['masks']=[];
-}
-
-return $data;
-}
-
-function saveData(array $data):void{
-$json=json_encode(
-$data,
-JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES
-);
-if($json===false){
-throw new RuntimeException('JSON konnte nicht erzeugt werden.');
-}
-
-$handle=@fopen(DATA_FILE,'c+b');
-if($handle===false){
-throw new RuntimeException('masks.json ist nicht beschreibbar.');
-}
-
-if(!flock($handle,LOCK_EX)){
-fclose($handle);
-throw new RuntimeException('masks.json konnte nicht gesperrt werden.');
-}
-
-$success=ftruncate($handle,0);
-if($success){
-$success=rewind($handle);
-}
-if($success){
-$length=strlen($json);
-$written=0;
-while($written<$length){
-$result=fwrite($handle,substr($json,$written));
-if($result===false||$result===0){
-$success=false;
-break;
-}
-$written+=$result;
-}
-}
-if($success){
-$success=fflush($handle);
-}
-
-flock($handle,LOCK_UN);
-fclose($handle);
-
-if(!$success){
-throw new RuntimeException('masks.json konnte nicht gespeichert werden.');
-}
-}
-
-function csrfToken():string{
-if(empty($_SESSION['csrf'])||!is_string($_SESSION['csrf'])){
-try{
-$_SESSION['csrf']=bin2hex(random_bytes(32));
-}catch(Throwable $exception){
-$_SESSION['csrf']=hash('sha256',uniqid('',true));
-}
-}
-return $_SESSION['csrf'];
-}
-
-function verifyCsrf():void{
-$token=isset($_POST['csrf'])&&is_string($_POST['csrf'])
-?$_POST['csrf']
-:'';
-if(!hash_equals(csrfToken(),$token)){
-http_response_code(403);
-exit('Ungültige Anfrage.');
-}
-}
-
-function postArray(string $name):array{
-if(isset($_POST[$name])&&is_array($_POST[$name])){
-return $_POST[$name];
-}
-return [];
-}
-
-function findMask(array $data,string $id):?array{
-foreach($data['masks'] as $mask){
-if(is_array($mask)&&(string)($mask['id']??'')===$id){
-return $mask;
-}
-}
-return null;
-}
-
-function normalizeMask(array $mask):array{
-if(!isset($mask['fields'])||!is_array($mask['fields'])){
-$mask['fields']=[];
-}
-if(!isset($mask['steps'])||!is_array($mask['steps'])){
-$mask['steps']=[];
-}
-return $mask;
-}
-
-function maskFromPost():array{
-$name=text($_POST['name']??'',120);
-if($name===''){
-throw new RuntimeException('Der Maskenname fehlt.');
-}
-
-$fieldIds=postArray('field_id');
-$fieldLabels=postArray('field_label');
-$fieldValues=postArray('field_value');
-$fields=[];
-$fieldCount=max(count($fieldLabels),count($fieldValues));
-
-for($index=0;$index<$fieldCount;$index++){
-$label=text($fieldLabels[$index]??'',120);
-$value=text($fieldValues[$index]??'',3000);
-
-if($label===''&&$value===''){
-continue;
-}
-if($label===''){
-throw new RuntimeException('Jedes gemeinsame Feld benötigt eine Bezeichnung.');
-}
-
-$fieldId=text($fieldIds[$index]??'',64);
-if($fieldId===''){
-$fieldId=identifier();
-}
-
-$fields[]=[
-'id'=>$fieldId,
-'label'=>$label,
-'value'=>$value
-];
-}
-
-$stepIds=postArray('step_id');
-$stepNames=postArray('step_name');
-$stepOperations=postArray('step_operation');
-$stepSubjects=postArray('step_subject');
-$stepBodies=postArray('step_body');
-
-$stepCount=max(
-count($stepNames),
-count($stepOperations),
-count($stepSubjects),
-count($stepBodies)
-);
-
-if($stepCount<1){
-throw new RuntimeException('Mindestens ein Prozessschritt ist erforderlich.');
-}
-if($stepCount>100){
-throw new RuntimeException('Maximal 100 Prozessschritte sind erlaubt.');
-}
-
-$steps=[];
-
-for($index=0;$index<$stepCount;$index++){
-$stepName=text($stepNames[$index]??'',120);
-if($stepName===''){
-throw new RuntimeException('Jeder Prozessschritt benötigt eine Bezeichnung.');
-}
-
-$stepId=text($stepIds[$index]??'',64);
-if($stepId===''){
-$stepId=identifier();
-}
-
-$steps[]=[
-'id'=>$stepId,
-'name'=>$stepName,
-'operation'=>text($stepOperations[$index]??'',120),
-'subject'=>text($stepSubjects[$index]??'',1000),
-'body'=>text($stepBodies[$index]??'',30000)
-];
-}
-
-$maskId=text($_POST['mask_id']??'',64);
-if($maskId===''){
-$maskId=identifier();
-}
-
-return [
-'id'=>$maskId,
-'name'=>$name,
-'description'=>text($_POST['description']??'',3000),
-'published'=>isset($_POST['published']),
-'fields'=>$fields,
-'steps'=>$steps,
-'updatedAt'=>gmdate('c')
-];
-}
-
-if(
-($_SERVER['REQUEST_METHOD']??'GET')==='POST'&&
-(int)($_SERVER['CONTENT_LENGTH']??0)>MAX_POST_SIZE
-){
-http_response_code(413);
-exit('Die Anfrage ist zu groß.');
-}
-
-$data=loadData();
-$page=text($_GET['_page']??'',30);
-$editId=text($_GET['_edit']??'',64);
-$maskId=text($_GET['_mask']??'',64);
-$message='';
-$error='';
-
-if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
-try{
-verifyCsrf();
-$action=text($_POST['action']??'',30);
-
-if($action==='save_mask'){
-$mask=maskFromPost();
-$updated=false;
-
-foreach($data['masks'] as $index=>$storedMask){
-if(
-is_array($storedMask)&&
-(string)($storedMask['id']??'')===$mask['id']
-){
-$data['masks'][$index]=$mask;
-$updated=true;
-break;
-}
-}
-
-if(!$updated){
-$data['masks'][]=$mask;
-}
-
-saveData($data);
-header('Location: ?_page=edit&_result=saved');
-exit;
-}
-
-if($action==='delete_mask'){
-$deleteId=text($_POST['mask_id']??'',64);
-$newMasks=[];
-
-foreach($data['masks'] as $storedMask){
-if(
-is_array($storedMask)&&
-(string)($storedMask['id']??'')===$deleteId
-){
-continue;
-}
-$newMasks[]=$storedMask;
-}
-
-$data['masks']=$newMasks;
-saveData($data);
-header('Location: ?_page=edit&_result=deleted');
-exit;
-}
-
-throw new RuntimeException('Unbekannte Aktion.');
-}catch(Throwable $exception){
-$error=$exception->getMessage();
-}
-}
-
-if(($_GET['_result']??'')==='saved'){
-$message='Maske gespeichert.';
-}
-if(($_GET['_result']??'')==='deleted'){
-$message='Maske gelöscht.';
-}
-
-$editedMask=null;
-if($editId!==''&&$editId!=='new'){
-$editedMask=findMask($data,$editId);
-if($editedMask!==null){
-$editedMask=normalizeMask($editedMask);
-}
-}
-
-$selectedMask=null;
-if($maskId!==''){
-$selectedMask=findMask($data,$maskId);
-if($selectedMask!==null){
-$selectedMask=normalizeMask($selectedMask);
-}
-}
+$error='';try{$data=loadData();}catch(Throwable $e){$data=freshData();$error=$e->getMessage();}
+if($_SERVER['REQUEST_METHOD']==='POST'){
+  header('Content-Type: application/json; charset=UTF-8');
+  try{$p=postJson();$op=s($p['op']??'',30);$data=loadData();
+    if($op==='save-config'){$c=is_array($p['configuration']??null)?$p['configuration']:[];$fields=[];foreach(array_slice(is_array($c['fields']??null)?$c['fields']:[],0,MAX_FIELDS) as $f){if(!is_array($f))continue;$key=s($f['key']??'',100);if($key==='')throw new RuntimeException('Jedes Feld benötigt einen Schlüssel.');$fields[]=['id'=>s($f['id']??'',100)?:id('field'),'key'=>$key,'label'=>s($f['label']??$key,160),'type'=>normType($f['type']??'text'),'values'=>cleanValues($f['values']??[]),'required'=>(bool)($f['required']??false)];}if(!$fields)throw new RuntimeException('Mindestens ein Znuny-Feld ist erforderlich.');$data['configuration']=['fields'=>$fields,'linkTypes'=>cleanValues($c['linkTypes']??[])];saveData($data);echo json_encode(['ok'=>true]);exit;}
+    if($op==='save-mask'){$m=is_array($p['mask']??null)?$p['mask']:[];$mid=s($m['id']??'',100)?:id('mask');$name=s($m['name']??'',160);if($name==='')throw new RuntimeException('Der Maskenname ist erforderlich.');$clean=migrate(['configuration'=>$data['configuration'],'masks'=>[array_merge($m,['id'=>$mid,'name'=>$name,'published'=>true,'updatedAt'=>date(DATE_ATOM)])]])['masks'][0];$canonical=[];foreach(['Type','Queue','Service'] as $fixedKey){$foundField=null;foreach($clean['steps'][0]['fields'] as $stepField)if($stepField['key']===$fixedKey){$foundField=$stepField;break;}if($foundField===null)$foundField=['id'=>id('step-field'),'key'=>$fixedKey,'value'=>'','enabled'=>true];$foundField['enabled']=true;$canonical[]=$foundField;}$clean['steps'][0]['fields']=$canonical;$found=false;foreach($data['masks'] as $i=>$old)if($old['id']===$mid){$data['masks'][$i]=$clean;$found=true;break;}if(!$found){if(count($data['masks'])>=MAX_MASKS)throw new RuntimeException('Maximale Maskenanzahl erreicht.');$data['masks'][]=$clean;}saveData($data);echo json_encode(['ok'=>true,'id'=>$mid]);exit;}
+    if($op==='delete-mask'){$mid=s($p['id']??'',100);$data['masks']=array_values(array_filter($data['masks'],fn($m)=>$m['id']!==$mid));saveData($data);echo json_encode(['ok'=>true]);exit;}
+    throw new RuntimeException('Unbekannte Aktion.');
+  }catch(Throwable $e){http_response_code(400);echo json_encode(['ok'=>false,'error'=>$e->getMessage()],JSON_UNESCAPED_UNICODE);exit;}
+}
+$page=s($_GET['page']??'masks',20);$maskId=s($_GET['id']??'',100);
 ?>
-<!doctype html>
-<html lang="de">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="light dark">
-<title>Znuny-Prozesse</title>
+<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Znuny Masken</title>
 <style>
-:root{--bg:#fff;--fg:#181818;--muted:#626870;--border:#d5d8dd;--panel:#f4f5f7;--panel2:#e8eaee;--accent:#075fcf;--accentfg:#fff;--danger:#b3261e;--success:#18763a;--successbg:#e8f5eb;--errorbg:#fdeaea;--variable:#fff4bd;--variableborder:#8b6b00;--shadow:rgba(0,0,0,.2)}
-@media(prefers-color-scheme:dark){:root{--bg:#111315;--fg:#e8e8e8;--muted:#aab0b8;--border:#30353c;--panel:#191c20;--panel2:#23272d;--accent:#6ca8ff;--accentfg:#08101b;--danger:#ff7777;--success:#62d683;--successbg:#173c24;--errorbg:#3e2020;--variable:#3d3411;--variableborder:#d7ad27;--shadow:rgba(0,0,0,.6)}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:14px Arial,Helvetica,sans-serif}
-main{max-width:1280px;margin:0 auto;padding:72px 20px 32px}
-h1{margin:0 0 18px;font-size:22px}
-h2{margin:0 0 14px;font-size:17px}
-h3{margin:0;font-size:15px}
-button{padding:8px 12px;border:1px solid var(--accent);border-radius:3px;background:var(--accent);color:var(--accentfg);font:inherit;font-weight:bold;cursor:pointer}
-button.secondary{border-color:var(--border);background:var(--panel);color:var(--fg)}
-button.danger{border-color:var(--danger);background:var(--danger);color:#fff}
-button.small{padding:5px 8px;font-size:12px}
-input,textarea,select{width:100%;padding:8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--fg);font:inherit}
-textarea{min-height:90px;resize:vertical}
-label{display:block;margin-bottom:5px;color:var(--muted);font-size:12px;font-weight:bold}
-form{margin:0}
-.panel{margin-bottom:14px;padding:14px;border:1px solid var(--border);border-radius:4px;background:var(--panel)}
-.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-.full{grid-column:1/-1}
-.actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.notice,.error{margin-bottom:14px;padding:10px;border-radius:3px}
-.notice{border:1px solid var(--success);background:var(--successbg)}
-.error{border:1px solid var(--danger);background:var(--errorbg)}
-.muted{color:var(--muted);font-size:12px}
-.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
-.card{display:flex;flex-direction:column;gap:10px;padding:14px;border:1px solid var(--border);border-radius:4px;background:var(--panel)}
-.card p{margin:0;color:var(--muted);line-height:1.45}
-.card .actions{margin-top:auto}
-.empty{padding:28px;border:1px dashed var(--border);color:var(--muted);text-align:center}
-.menu-button{position:fixed;top:10px;left:10px;z-index:1001;padding:10px 14px;border:0;background:#181818;color:#fff;font-size:20px}
-.menu-overlay{position:fixed;inset:0;display:none;z-index:1000}
-.menu-overlay.visible{display:block}
-.menu-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.55)}
-.menu-panel{position:absolute;top:0;left:0;width:260px;height:100%;padding:20px;background:var(--panel);box-shadow:2px 0 10px var(--shadow)}
-.menu-close{display:block;margin-left:auto;padding:0;border:0;background:transparent;color:var(--fg);font-size:28px}
-.menu-title{margin:12px 0 20px;font-size:17px;font-weight:bold}
-.menu-nav{display:flex;flex-direction:column;gap:8px}
-.menu-nav button{width:100%;border-color:var(--border);background:transparent;color:var(--fg);text-align:left}
-.editor-item{margin-bottom:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg)}
-.item-header{display:flex;align-items:center;gap:8px;padding:9px 10px;border-bottom:1px solid var(--border);background:var(--panel2)}
-.item-controls{display:flex;gap:5px;margin-left:auto}
-.item-body{padding:12px}
-.workspace{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:18px;align-items:start}
-.variable-panel{position:sticky;top:18px}
-.variable-text{min-height:360px;font:13px/1.5 Consolas,monospace}
-.ticket{margin-bottom:16px;border:1px solid var(--border);border-radius:4px;background:var(--bg);overflow:hidden}
-.ticket-header{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--border);background:var(--panel2)}
-.ticket-number{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:var(--accent);color:var(--accentfg);font-weight:bold}
-.ticket-operation{margin-left:auto;color:var(--muted);font-size:12px}
-.ticket-fields{display:grid;grid-template-columns:170px minmax(0,1fr)}
-.ticket-label,.ticket-value{padding:8px 10px;border-bottom:1px solid var(--border)}
-.ticket-label{background:var(--panel);color:var(--muted);font-weight:bold}
-.ticket-content{padding:14px}
-.ticket-subject{margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border);font-weight:bold;line-height:1.65}
-.ticket-text{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.65}
-.variable{display:inline-block;min-width:42px;padding:1px 5px;border:1px dashed var(--variableborder);border-radius:2px;background:var(--variable);color:var(--fg);font:inherit;font-weight:normal;cursor:pointer;vertical-align:baseline}
-.variable:hover,.variable.active{outline:2px solid var(--accent);outline-offset:1px}
-.process-arrow{height:28px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:18px}
-code{padding:2px 4px;background:var(--panel2);border-radius:2px}
-@media(max-width:920px){.workspace{grid-template-columns:1fr}.variable-panel{position:static}}
-@media(max-width:700px){main{padding:68px 12px 24px}.grid{grid-template-columns:1fr}.full{grid-column:auto}.ticket-fields{grid-template-columns:1fr}.ticket-label{padding-bottom:2px;border-bottom:0}.ticket-value{padding-top:2px}.menu-panel{width:min(260px,85vw)}}
-</style>
-</head>
-<body>
-<button type="button" class="menu-button" id="menuButton" aria-label="Menü öffnen">☰</button>
-<div class="menu-overlay" id="menuOverlay" aria-hidden="true">
-<div class="menu-backdrop" id="menuBackdrop"></div>
-<div class="menu-panel">
-<button type="button" class="menu-close" id="menuClose" aria-label="Menü schließen">×</button>
-<div class="menu-title">Znuny-Prozesse</div>
-<div class="menu-nav">
-<button type="button" data-location="./">Masken</button>
-<button type="button" data-location="?_page=edit">Verwaltung</button>
-</div>
-</div>
-</div>
-<main>
-<?php if($message!==''): ?>
-<div class="notice"><?=html($message)?></div>
-<?php endif; ?>
-<?php if($error!==''): ?>
-<div class="error"><?=html($error)?></div>
-<?php endif; ?>
+:root{--nav:#24445d;--blue:#1769aa;--bg:#edf1f4;--line:#ccd4da;--text:#24313a;--danger:#a52a2a}*{box-sizing:border-box}body{margin:0;font:14px/1.45 Arial,sans-serif;color:var(--text);background:var(--bg)}a{color:var(--blue)}button,input,select,textarea{font:inherit}button,.btn{border:1px solid #81909a;background:#fff;color:#24313a;border-radius:3px;padding:7px 12px;cursor:pointer;text-decoration:none;display:inline-block}button.primary,.btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}button.danger{color:var(--danger)}button:focus,input:focus,select:focus,textarea:focus,a:focus{outline:3px solid #ffbf47;outline-offset:2px}.top{height:52px;background:var(--nav);color:#fff;display:flex;align-items:center;padding:0 18px;gap:14px}.theme-toggle{margin-left:auto;background:#173247;color:#fff;border-color:#7890a0}.badge{display:inline-block;background:#e7f2fa;color:#174f76;padding:6px 9px;border-radius:999px;font-weight:bold}.burger{font-size:22px;background:transparent;border:0;color:#fff;padding:4px}.brand{font-size:18px;font-weight:bold}.menu{position:absolute;top:52px;left:0;background:#fff;border:1px solid var(--line);width:220px;z-index:20;box-shadow:0 4px 12px #0003}.menu a{display:block;padding:13px 18px;text-decoration:none;border-bottom:1px solid #eee}.hidden{display:none!important}.wrap{max-width:1180px;margin:24px auto;padding:0 16px}.bar,.card,.panel{background:#fff;border:1px solid var(--line);border-radius:4px;padding:16px;margin-bottom:16px}.bar{display:flex;align-items:center;justify-content:space-between;gap:12px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}.mask-card h2{font-size:17px;margin:0 0 8px}.muted{color:#667783}.error,.notice{padding:12px;border-radius:3px;margin-bottom:15px}.error{background:#ffe5e5;border:1px solid #c66}.notice{background:#e8f4fc;border:1px solid #8abbd7}.tabs{display:flex;gap:4px;margin-bottom:16px}.tabs a{padding:9px 14px;background:#fff;border:1px solid var(--line);text-decoration:none}.tabs a.active{background:var(--nav);color:#fff}.row{display:grid;grid-template-columns:repeat(12,1fr);gap:10px;align-items:end;margin-bottom:10px}.c2{grid-column:span 2}.c3{grid-column:span 3}.c4{grid-column:span 4}.c6{grid-column:span 6}.c8{grid-column:span 8}.c12{grid-column:span 12}label{display:block;font-weight:bold;margin-bottom:4px}input[type=text],input[type=number],input[type=date],input[type=datetime-local],input[type=email],select,textarea{width:100%;border:1px solid #99a7b0;border-radius:3px;padding:7px;background:#fff}textarea{min-height:90px;resize:vertical}.step{background:#fff;border:1px solid #bfcbd2;border-left:5px solid var(--nav);margin:18px 0}.step-head{display:flex;align-items:center;padding:10px 12px;background:#f6f8f9;gap:8px}.step-title{font-weight:bold;flex:1}.icon{padding:5px 9px}.step-body{padding:14px;border-top:1px solid var(--line)}.plus{display:block;margin:20px auto;border-radius:50%;font-size:24px;width:44px;height:44px;padding:0;background:var(--blue);color:#fff;border:0}.overlay{position:fixed;inset:0;background:#0008;display:flex;align-items:center;justify-content:center;z-index:50}.dialog{background:#fff;max-width:760px;width:calc(100% - 30px);max-height:85vh;overflow:auto;padding:20px;border-radius:5px}.actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px}.fieldrow{border:1px solid #d8dfe3;padding:10px;margin:8px 0}.public-layout{display:grid;grid-template-columns:minmax(240px,320px) minmax(0,1fr);gap:22px;align-items:start}.public-sidebar{position:sticky;top:16px;background:#fff;border:1px solid var(--line);padding:14px}.public-sidebar h2,.public-process>h2{font-size:16px;margin:0 0 10px}.public-vars{background:#fff;padding:0;margin:0}.var-input{border:0!important;border-bottom:1px solid #d8dfe3!important;border-radius:0!important;padding:10px 4px!important}.ticket{background:#fff;border:1px solid var(--line);margin:18px 0}.ticket h2{font-size:16px;background:#f3f6f8;padding:10px 14px;margin:0;border-bottom:1px solid var(--line)}.ticket .content{padding:14px}.kv{display:grid;grid-template-columns:180px 1fr auto;gap:10px;align-items:center;border-bottom:1px solid #eee;padding:7px 0}.copy-inline{padding:4px 8px;font-size:12px}.text-block{position:relative;border-top:1px solid #e4e9ec;padding:10px 110px 10px 0}.text-block .copy-inline{position:absolute;right:0;top:8px}.copyable{white-space:pre-wrap;user-select:text;margin-top:4px}.copy{float:right}.empty{text-align:center;padding:35px;color:#657680}.status{position:fixed;right:15px;bottom:15px;background:#24313a;color:#fff;padding:10px 14px;border-radius:3px;z-index:90}html[data-theme='dark']{--nav:#101820;--blue:#58a6d8;--bg:#11171c;--line:#3b4851;--text:#e5edf2}html[data-theme='dark'] body,html[data-theme='dark'] input,html[data-theme='dark'] select,html[data-theme='dark'] textarea{color:var(--text)}html[data-theme='dark'] .bar,html[data-theme='dark'] .card,html[data-theme='dark'] .panel,html[data-theme='dark'] .step,html[data-theme='dark'] .ticket,html[data-theme='dark'] .public-sidebar,html[data-theme='dark'] .menu,html[data-theme='dark'] input,html[data-theme='dark'] select,html[data-theme='dark'] textarea,html[data-theme='dark'] button{background:#192229;color:#e5edf2}html[data-theme='dark'] .step-head,html[data-theme='dark'] .ticket h2{background:#202b33}html[data-theme='dark'] .muted{color:#a7b5be}@media(max-width:800px){.public-layout{grid-template-columns:1fr}.public-sidebar{position:static}}@media(max-width:700px){.row{display:block}.row>div{margin-bottom:9px}.bar{align-items:flex-start;flex-direction:column}.kv{grid-template-columns:1fr}.step-head{flex-wrap:wrap}}
 
-<?php if($page==='edit'): ?>
+.compact-panel{max-width:760px;margin-inline:auto}.section-title{padding:2px 0 12px}.config-list{border-top:1px solid var(--line)}.compact-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 2px;border-bottom:1px solid var(--line)}.compact-row span{display:flex;flex-direction:column;gap:2px}.compact-row small{color:#71808a}.savebar{display:flex;justify-content:flex-end;margin:14px 0 0}.slim{padding:9px 12px}.dialog-small{max-width:520px}.dialog-head,.dialog-actions{display:flex;align-items:center;justify-content:space-between;gap:12px}.dialog-head{padding-bottom:12px;border-bottom:1px solid var(--line)}.dialog-actions{justify-content:flex-end;padding-top:14px}.list-editor{min-height:220px;margin-top:8px}.variable-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}.variable-chip{border:0;background:#dceeff;color:#075985;padding:3px 7px;border-radius:999px;font-weight:bold;font-size:12px}.variable-chip:hover{background:#bedfff}.customer-chip{background:#fff1c7;color:#7a4b00}.customer-inline{display:inline-block;border-radius:4px;background:#fff1a8;color:#543600;padding:1px 5px;margin:0 3px;font-weight:600}.customer-form{display:inline-block;padding:1px 5px;border-radius:4px;background:#fff1a8;color:#694300!important;font-weight:600;text-decoration:underline}.customer-form::after{content:' ↗'}html[data-theme='dark'] .variable-chip{background:#163e55;color:#91d5ff}html[data-theme='dark'] .customer-chip{background:#4b350d;color:#ffd77a}html[data-theme='dark'] .customer-inline{background:#4b350d;color:#ffe29a}html[data-theme='dark'] .customer-form{background:#4b350d;color:#ffe29a!important}html[data-theme='dark'] .badge{background:#163e55;color:#91d5ff}html[data-theme='dark'] .notice{background:#172a36;border-color:#31566b}.panel,.card,.bar{box-shadow:none}.dialog{box-shadow:0 18px 55px #0008}.step{border-radius:7px;overflow:hidden}.step-body{background:color-mix(in srgb,var(--bg) 30%,white)}html[data-theme='dark'] .step-body{background:#172027}
+.step-instruction{font-size:12px;color:#687983;padding:0 0 10px;border-bottom:1px solid var(--line);margin-bottom:8px}.public-sidebar{border-radius:8px}.ticket{border-radius:8px;overflow:hidden}.wrap{max-width:1080px}.bar h1{font-size:20px;margin:0}.bar{padding:12px 14px}.panel{padding:12px}.step-body{padding:12px}.dialog{border:1px solid var(--line)}html[data-theme='dark'] .step-instruction{color:#9fb0ba}.theme-toggle{display:none}
+.fixed-values{display:grid;gap:6px;padding-top:12px}.fixed-values div{padding:7px 9px;border:1px solid var(--line);border-radius:5px}.compact-panel .muted{display:none}.compact-row{padding:8px 2px}.compact-row button{padding:5px 9px}.section-title{padding-bottom:8px}
 
-<?php if($editId===''): ?>
-<h1>Maskenverwaltung</h1>
-<div class="actions" style="margin-bottom:14px">
-<button type="button" data-location="?_page=edit&amp;_edit=new">Neue Maske</button>
-</div>
-<div class="cards">
-<?php foreach($data['masks'] as $mask): ?>
-<?php if(!is_array($mask)){continue;} ?>
-<div class="card">
-<h3><?=html($mask['name']??'')?></h3>
-<p><?=nl2br(html($mask['description']??''))?></p>
-<div class="muted">
-<?=count(is_array($mask['steps']??null)?$mask['steps']:[])?> Prozessschritte ·
-<?=!empty($mask['published'])?'Veröffentlicht':'Verborgen'?>
-</div>
-<div class="actions">
-<button type="button" class="secondary small" data-location="?_page=edit&amp;_edit=<?=rawurlencode((string)($mask['id']??''))?>">Bearbeiten</button>
-<button type="button" class="secondary small" data-location="?_mask=<?=rawurlencode((string)($mask['id']??''))?>">Öffnen</button>
-<form method="post" onsubmit="return confirm('Maske wirklich löschen?')">
-<input type="hidden" name="csrf" value="<?=html(csrfToken())?>">
-<input type="hidden" name="action" value="delete_mask">
-<input type="hidden" name="mask_id" value="<?=html($mask['id']??'')?>">
-<button type="submit" class="danger small">Löschen</button>
-</form>
-</div>
-</div>
-<?php endforeach; ?>
-<?php if(count($data['masks'])===0): ?>
-<div class="empty">Keine Masken vorhanden.</div>
-<?php endif; ?>
-</div>
+.required-field{display:grid;grid-template-columns:120px minmax(0,1fr);align-items:center;gap:12px;padding:7px 0;border-bottom:1px solid var(--line)}.required-field label{margin:0}.required-field select{height:36px}.step-body>.required-fields{display:grid;grid-template-columns:1fr 1fr;gap:0 20px}.dialog-small{background:#fff;color:#17232b;border:2px solid #6f7e88}.dialog-small label{color:#17232b;margin-top:12px}.dialog-small input,.dialog-small select,.dialog-small textarea{background:#fff;color:#17232b;border-color:#74848f}.dialog-small .dialog-head{background:#eef3f6;margin:-20px -20px 12px;padding:14px 20px}.dialog-small .dialog-actions{border-top:1px solid #ccd4da;margin:14px -20px -20px;padding:14px 20px}html[data-theme='dark'] .dialog-small{background:#202a31;color:#f2f6f8;border-color:#8ea0aa}html[data-theme='dark'] .dialog-small .dialog-head{background:#111a20}html[data-theme='dark'] .dialog-small label{color:#f2f6f8}html[data-theme='dark'] .dialog-small input,html[data-theme='dark'] .dialog-small select,html[data-theme='dark'] .dialog-small textarea{background:#111a20;color:#f2f6f8;border-color:#71838e}@media(max-width:700px){.required-field{grid-template-columns:1fr;gap:4px}}
 
-<?php else: ?>
+.required-fields{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:10px!important}.required-field{display:block;border:0;padding:0}.required-field label{display:block;margin-bottom:4px}.small-add{margin-top:8px;padding:5px 9px}.step-body .fieldrow{padding:8px;border-radius:6px}.actions{grid-template-columns:repeat(3,1fr)}@media(max-width:700px){.required-fields,.actions{grid-template-columns:1fr!important}}
 
-<?php
-$formMask=$editedMask??[
-'id'=>'',
-'name'=>'',
-'description'=>'',
-'published'=>true,
-'fields'=>[],
-'steps'=>[
-[
-'id'=>'',
-'name'=>'Erster Schritt',
-'operation'=>'',
-'subject'=>'',
-'body'=>''
-]
-]
-];
-?>
-
-<h1><?=html($formMask['id']!==''?'Maske bearbeiten':'Neue Maske')?></h1>
-<form method="post">
-<input type="hidden" name="csrf" value="<?=html(csrfToken())?>">
-<input type="hidden" name="action" value="save_mask">
-<input type="hidden" name="mask_id" value="<?=html($formMask['id']??'')?>">
-
-<div class="panel">
-<h2>Grunddaten</h2>
+.icon-only{width:34px;height:32px;padding:4px;display:inline-grid;place-items:center;font-size:17px}.step-head{cursor:default}.step[draggable="true"] .step-head{cursor:grab}.drag-handle{color:#70808a;font-size:18px;letter-spacing:-3px;padding-right:5px}.step.dragging{opacity:.45}.step.drag-over{border-top:3px solid var(--blue)}.context-menu{position:fixed;z-index:120;width:150px;background:#fff;border:1px solid #8998a2;border-radius:6px;box-shadow:0 8px 25px #0005;padding:5px;display:grid;gap:4px}.context-menu button{text-align:left;border:0;padding:8px}.context-menu button:hover{background:#edf2f5}html[data-theme='dark'] .context-menu{background:#202a31;border-color:#71838e}html[data-theme='dark'] .context-menu button:hover{background:#2c3942}.step-body{display:block}.step-head+.step-body{border-top:1px solid var(--line)}
+.ticket-start-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:12px}.ticket-start-field{border:1px solid var(--line);border-radius:6px;padding:9px 10px;display:grid;gap:4px}.ticket-start-field strong{font-size:12px;color:#687983}.ticket-start-field span{font-weight:600}@media(max-width:700px){.ticket-start-fields{grid-template-columns:1fr}}html[data-theme='dark'] .ticket-start-field strong{color:#9fb0ba}.public-layout.no-sidebar{grid-template-columns:minmax(0,1fr)}.public-layout.no-sidebar .public-process{grid-column:1}.text-block:not(:has(.copy-inline)){padding-right:0}</style></head><body><header class="top"><button class="burger" id="burger" aria-label="Menü" aria-expanded="false">☰</button><span class="brand">Znuny Masken</span></header><nav id="menu" class="menu hidden" aria-label="Hauptnavigation"><a href="?page=masks">Masken</a><a href="?page=editor">Editor</a></nav><main class="wrap">
+<?php if($error):?><div class="error"><?=h($error)?></div><?php endif;?>
+<?php if($page==='masks'):?>
 <div class="grid">
-<div>
-<label for="name">Name</label>
-<input id="name" name="name" maxlength="120" required value="<?=html($formMask['name']??'')?>">
-</div>
-<div>
-<label>Veröffentlichung</label>
-<label style="font-size:14px;color:var(--fg);font-weight:normal">
-<input type="checkbox" name="published" style="width:auto" <?=!empty($formMask['published'])?'checked':''?>>
-Auf der Startseite anzeigen
-</label>
-</div>
-<div class="full">
-<label for="description">Beschreibung</label>
-<textarea id="description" name="description" maxlength="3000"><?=html($formMask['description']??'')?></textarea>
-</div>
-</div>
-</div>
-
-<div class="panel">
-<div class="actions" style="justify-content:space-between;margin-bottom:12px">
-<div>
-<h2>Gemeinsame Ticketfelder</h2>
-<div class="muted">Diese Felder werden einmal festgelegt und in jedem Prozessschritt angezeigt.</div>
-</div>
-<button type="button" id="addField">Feld hinzufügen</button>
-</div>
-<div id="fields">
-<?php foreach($formMask['fields'] as $field): ?>
-<div class="editor-item">
-<div class="item-header">
-<strong data-field-title><?=html($field['label']??'Feld')?></strong>
-<div class="item-controls">
-<button type="button" class="secondary small" data-up>↑</button>
-<button type="button" class="secondary small" data-down>↓</button>
-<button type="button" class="danger small" data-remove>Entfernen</button>
-</div>
-</div>
-<div class="item-body">
-<input type="hidden" name="field_id[]" value="<?=html($field['id']??'')?>">
-<div class="grid">
-<div>
-<label>Bezeichnung</label>
-<input name="field_label[]" maxlength="120" required data-field-label value="<?=html($field['label']??'')?>">
-</div>
-<div class="full">
-<label>Wert oder Vorlage</label>
-<textarea name="field_value[]" maxlength="3000"><?=html($field['value']??'')?></textarea>
-</div>
-</div>
-</div>
-</div>
-<?php endforeach; ?>
-</div>
-</div>
-
-<div class="panel">
-<div class="actions" style="justify-content:space-between;margin-bottom:12px">
-<div>
-<h2>Prozessschritte</h2>
-<div class="muted">Variablen werden als <code>{{Name}}</code> geschrieben.</div>
-</div>
-<button type="button" id="addStep">Schritt hinzufügen</button>
-</div>
-<div id="steps">
-<?php foreach($formMask['steps'] as $step): ?>
-<div class="editor-item">
-<div class="item-header">
-<strong data-step-title><?=html($step['name']??'Schritt')?></strong>
-<span class="muted" data-operation-title><?=html($step['operation']??'')?></span>
-<div class="item-controls">
-<button type="button" class="secondary small" data-up>↑</button>
-<button type="button" class="secondary small" data-down>↓</button>
-<button type="button" class="danger small" data-remove>Entfernen</button>
-</div>
-</div>
-<div class="item-body">
-<input type="hidden" name="step_id[]" value="<?=html($step['id']??'')?>">
-<div class="grid">
-<div>
-<label>Bezeichnung</label>
-<input name="step_name[]" maxlength="120" required data-step-name value="<?=html($step['name']??'')?>">
-</div>
-<div>
-<label>Prozessart</label>
-<input name="step_operation[]" maxlength="120" data-operation-input value="<?=html($step['operation']??'')?>">
-</div>
-<div class="full">
-<label>Betreff</label>
-<input name="step_subject[]" maxlength="1000" value="<?=html($step['subject']??'')?>">
-</div>
-<div class="full">
-<label>Text</label>
-<textarea name="step_body[]" maxlength="30000"><?=html($step['body']??'')?></textarea>
-</div>
-</div>
-</div>
-</div>
-<?php endforeach; ?>
-</div>
-<div class="actions">
-<button type="submit">Maske speichern</button>
-<button type="button" class="secondary" data-location="?_page=edit">Abbrechen</button>
-</div>
-</div>
-</form>
-
-<template id="fieldTemplate">
-<div class="editor-item">
-<div class="item-header">
-<strong data-field-title>Neues Feld</strong>
-<div class="item-controls">
-<button type="button" class="secondary small" data-up>↑</button>
-<button type="button" class="secondary small" data-down>↓</button>
-<button type="button" class="danger small" data-remove>Entfernen</button>
-</div>
-</div>
-<div class="item-body">
-<input type="hidden" name="field_id[]" value="">
-<div class="grid">
-<div>
-<label>Bezeichnung</label>
-<input name="field_label[]" maxlength="120" required data-field-label value="Neues Feld">
-</div>
-<div class="full">
-<label>Wert oder Vorlage</label>
-<textarea name="field_value[]" maxlength="3000"></textarea>
-</div>
-</div>
-</div>
-</div>
-</template>
-
-<template id="stepTemplate">
-<div class="editor-item">
-<div class="item-header">
-<strong data-step-title>Neuer Schritt</strong>
-<span class="muted" data-operation-title></span>
-<div class="item-controls">
-<button type="button" class="secondary small" data-up>↑</button>
-<button type="button" class="secondary small" data-down>↓</button>
-<button type="button" class="danger small" data-remove>Entfernen</button>
-</div>
-</div>
-<div class="item-body">
-<input type="hidden" name="step_id[]" value="">
-<div class="grid">
-<div>
-<label>Bezeichnung</label>
-<input name="step_name[]" maxlength="120" required data-step-name value="Neuer Schritt">
-</div>
-<div>
-<label>Prozessart</label>
-<input name="step_operation[]" maxlength="120" data-operation-input>
-</div>
-<div class="full">
-<label>Betreff</label>
-<input name="step_subject[]" maxlength="1000">
-</div>
-<div class="full">
-<label>Text</label>
-<textarea name="step_body[]" maxlength="30000"></textarea>
-</div>
-</div>
-</div>
-</div>
-</template>
-
-<?php endif; ?>
-
-<?php elseif($selectedMask!==null): ?>
-
-<h1><?=html($selectedMask['name']??'')?></h1>
-<?php if(!empty($selectedMask['description'])): ?>
-<div class="panel"><?=nl2br(html($selectedMask['description']))?></div>
-<?php endif; ?>
-
-<div class="workspace">
-<div id="workflow"></div>
-<aside class="variable-panel">
-<div class="panel">
-<h2>Variablen</h2>
-<textarea id="variableText" class="variable-text" spellcheck="false"></textarea>
-<div class="actions" style="margin-top:12px">
-<button type="button" id="applyVariables">Übernehmen</button>
-<button type="button" class="secondary" id="copyVariables">Kopieren</button>
-<button type="button" class="secondary" id="resetVariables">Zurücksetzen</button>
-</div>
-</div>
-<div class="panel">
-<button type="button" id="copyProcess">Gesamten Prozess kopieren</button>
-</div>
-</aside>
-</div>
-
-<script id="maskData" type="application/json"><?=json_encode(
-$selectedMask,
-JSON_UNESCAPED_UNICODE|
-JSON_UNESCAPED_SLASHES|
-JSON_HEX_TAG|
-JSON_HEX_AMP|
-JSON_HEX_APOS|
-JSON_HEX_QUOT
-)?></script>
-
-<?php else: ?>
-
-<h1>Znuny-Prozesse</h1>
-<div class="cards">
-<?php
-$publishedCount=0;
-foreach($data['masks'] as $mask):
-if(!is_array($mask)||empty($mask['published'])){
-continue;
-}
-$publishedCount++;
-?>
-<div class="card">
-<h3><?=html($mask['name']??'')?></h3>
-<p><?=nl2br(html($mask['description']??''))?></p>
-<div class="muted"><?=count(is_array($mask['steps']??null)?$mask['steps']:[])?> Prozessschritte</div>
-<div class="actions">
-<button type="button" data-location="?_mask=<?=rawurlencode((string)($mask['id']??''))?>">Öffnen</button>
-</div>
-</div>
-<?php endforeach; ?>
-<?php if($publishedCount===0): ?>
-<div class="empty">Keine veröffentlichten Masken vorhanden.</div>
-<?php endif; ?>
-</div>
-
-<?php endif; ?>
-</main>
-
+<?php $pub=array_values(array_filter($data['masks'],fn($m)=>$m['published']));if(!$pub):?><div class="card empty">Keine veröffentlichten Masken vorhanden</div><?php endif;foreach($pub as $m):?><article class="card mask-card"><h2><?=h($m['name'])?></h2><p><?=h($m['description'])?></p><p class="muted"><?=count($m['steps'])?> Prozessschritte</p><a class="btn primary" href="?page=view&amp;id=<?=h($m['id'])?>">Öffnen</a></article><?php endforeach;?></div>
+<?php elseif($page==='editor'):?>
+<div class="tabs"><a class="active" href="?page=editor">Masken</a><a href="?page=config">Znuny-Konfiguration</a></div><div class="bar"><strong>Masken</strong><a class="btn primary" href="?page=edit">Neue Maske</a></div>
+<?php foreach($data['masks'] as $m):?><div class="card row"><div class="c3"><strong><?=h($m['name'])?></strong></div><div class="c4"><?=h($m['description'])?></div><div class="c2"><?=count($m['steps'])?> Schritte</div><div class="c3"><a class="btn icon-only" aria-label="Bearbeiten" title="Bearbeiten" href="?page=edit&amp;id=<?=h($m['id'])?>">✎</a> <button class="danger icon-only delete-mask" aria-label="Löschen" title="Löschen" data-id="<?=h($m['id'])?>">⌫</button></div></div><?php endforeach;?>
+<?php elseif($page==='config'):?>
+<div class="bar"><div><h1>Editor</h1><div class="muted">Feste Werte für den Start eines Ticketprozesses</div></div></div><div class="tabs"><a href="?page=editor">Masken</a><a class="active" href="?page=config">Znuny-Konfiguration</a></div><div class="panel compact-panel"><div class="section-title"><div><strong>Feste Znuny-Auswahllisten</strong><div class="muted">Diese Werte gelten für den ersten Schritt jedes Ticketprozesses.</div></div></div><div id="config-fields" class="config-list"></div></div>
+<?php elseif($page==='edit'): $sel=null;foreach($data['masks'] as $m)if($m['id']===$maskId)$sel=$m;if(!$sel)$sel=['id'=>'','name'=>'','description'=>'','published'=>false,'variables'=>[],'steps'=>[['id'=>id('step'),'action'=>'ticket-create','subject'=>'','body'=>'','fields'=>[],'links'=>[],'meta'=>[]]],'updatedAt'=>''];?>
+<div class="bar"><div><h1><?= $sel['id']?'Maske bearbeiten':'Neue Maske'?></h1><div class="muted">Znuny-orientierten Ticketprozess konfigurieren</div></div><a class="btn" href="?page=editor">Zur Übersicht</a></div><div class="panel"><div class="row"><div class="c12"><label for="mask-name">Name</label><input id="mask-name" type="text" maxlength="160"></div></div></div><div id="steps"></div><button class="plus" id="add-step" aria-label="Prozessschritt hinzufügen">+</button><p><button class="primary" id="save-mask">Maske speichern</button></p>
+<?php elseif($page==='view'): $sel=null;foreach($data['masks'] as $m)if($m['id']===$maskId)$sel=$m;if(!$sel):?><div class="error">Maske nicht gefunden.</div><?php else:?><div class="bar"><div><h1><?=h($sel['name'])?></h1><div class="muted"><?=h($sel['description'])?></div></div></div><div class="public-layout"><aside class="public-sidebar"><h2>Platzhalter</h2><section class="public-vars" id="public-vars"></section></aside><section class="public-process"><h2>Ticketprozess</h2><div id="public-steps"></div></section></div><?php endif;?>
+<?php else:?><div class="error">Seite nicht gefunden.</div><?php endif;?></main><div id="status" class="status hidden" role="status"></div><div id="overlay" class="overlay hidden" role="dialog" aria-modal="true"><div class="dialog"><div class="bar"><strong>Aktion auswählen</strong><button id="close-overlay">Schließen</button></div><div class="actions" id="action-list"></div></div></div><div id="edit-overlay" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="edit-overlay-title"><div class="dialog dialog-small"><div class="dialog-head"><strong id="edit-overlay-title">Einstellungen</strong><button id="close-edit-overlay" type="button">Schließen</button></div><div id="edit-overlay-body"></div><div class="dialog-actions"><button class="primary" id="apply-edit-overlay" type="button">Übernehmen</button></div></div></div>
 <script>
-(function(){
-"use strict";
-
-document.addEventListener("click",function(event){
-var locationButton=event.target.closest("[data-location]");
-if(locationButton){
-window.location.href=locationButton.getAttribute("data-location");
-return;
+'use strict';
+document.documentElement.dataset.theme=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';matchMedia('(prefers-color-scheme: dark)').addEventListener('change',e=>document.documentElement.dataset.theme=e.matches?'dark':'light')
+const CSRF=<?=json_encode($_SESSION['csrf'])?>, CONFIG=<?=json_encode($data['configuration'],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)?>, PAGE=<?=json_encode($page)?>, CURRENT=<?=json_encode(isset($sel)?$sel:null,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)?>;
+const $=(q,r=document)=>r.querySelector(q), $$=(q,r=document)=>Array.from(r.querySelectorAll(q));
+function el(tag,attrs={},text=''){const n=document.createElement(tag);Object.entries(attrs).forEach(([k,v])=>{if(k==='class')n.className=v;else if(k==='checked')n.checked=!!v;else if(k==='value')n.value=v??'';else if(k.startsWith('on'))n.addEventListener(k.slice(2),v);else n.setAttribute(k,String(v));});if(text!=='')n.textContent=text;return n}
+function status(t,bad=false){const n=$('#status');n.textContent=t;n.style.background=bad?'#8f2525':'#24313a';n.classList.remove('hidden');setTimeout(()=>n.classList.add('hidden'),3500)}
+async function api(payload){const r=await fetch(location.href,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...payload,csrf:CSRF})});const j=await r.json();if(!r.ok||!j.ok)throw new Error(j.error||'Fehler');return j}
+$('#burger').addEventListener('click',()=>{const m=$('#menu'),show=m.classList.toggle('hidden');$('#burger').setAttribute('aria-expanded',String(!show))});document.addEventListener('click',e=>{if(!e.target.closest('.top')&&!e.target.closest('#menu'))$('#menu').classList.add('hidden');if(!e.target.closest('.context-menu'))document.querySelectorAll('.context-menu').forEach(n=>n.remove())});
+$$('.delete-mask').forEach(b=>b.addEventListener('click',async()=>{if(!confirm('Diese Maske wirklich löschen?'))return;try{await api({op:'delete-mask',id:b.dataset.id});location.reload()}catch(e){status(e.message,true)}}));
+const types=['text','select','number'];
+function labeled(label,node,cls='c3'){const d=el('div',{class:cls});d.append(el('label',{},label),node);return d}
+function select(options,value){const n=el('select');options.forEach(x=>n.append(el('option',{value:x,selected:x===value?true:null},x)));n.value=value||options[0]||'';return n}
+if(PAGE==='config'){
+ const fixedKeys=['Type','Queue','Service'];
+ const defaults={Type:'Type',Queue:'To queue',Service:'Service'};
+ const fields=fixedKeys.map(key=>{const old=CONFIG.fields.find(f=>f.key===key);return old?{...old,label:defaults[key],type:'select',required:true}:{id:'field-'+key.toLowerCase(),key,label:defaults[key],type:'select',values:[],required:true}});
+ let linkTypes=[...(CONFIG.linkTypes||[])],apply=null;
+ const editOverlay=$('#edit-overlay'),editBody=$('#edit-overlay-body'),editTitle=$('#edit-overlay-title');
+ function openList(title,values){editTitle.textContent=title;editBody.replaceChildren();const list=el('div',{class:'fixed-values'});(values||[]).forEach(v=>list.append(el('div',{},v)));editBody.append(list);$('#apply-edit-overlay').classList.add('hidden');editOverlay.classList.remove('hidden')}
+ function drawConfig(){const root=$('#config-fields');root.replaceChildren();fields.forEach(f=>{const row=el('div',{class:'compact-row'}),info=el('span');info.append(el('strong',{},f.label),el('small',{},`${f.values.length} Werte · ${f.key}`));const button=el('button',{type:'button'},'Werte ansehen');button.onclick=()=>openList(f.label,f.values);row.append(info,button);root.append(row)})}
+ $('#close-edit-overlay').onclick=()=>editOverlay.classList.add('hidden');drawConfig();
 }
-
-if(event.target.id==="menuButton"){
-var overlay=document.getElementById("menuOverlay");
-overlay.classList.add("visible");
-overlay.setAttribute("aria-hidden","false");
-return;
+const ACTIONS={'ticket-create':'Ticket erstellen','ticket-edit':'Ticket bearbeiten','note':'Textfeld','email':'E-Mail hinzufügen','phone':'Telefonartikel hinzufügen','customer':'Kunde ändern','queue':'Queue ändern','owner':'Besitzer ändern','responsible':'Verantwortlichen ändern','state':'Status ändern','priority':'Priorität ändern','type':'Typ ändern','service':'Service ändern','sla':'SLA ändern','field-set':'Feld setzen','link':'Verknüpfen','close':'Ticket schließen','free':'Freier Schritt'};
+function blankStep(action){return {id:'step-'+crypto.randomUUID(),action,subject:'',body:'',fields:[],links:[],meta:{}}}
+function fieldDef(key){return CONFIG.fields.find(f=>f.key===key)||{key,label:key,type:'text',values:[],required:false}}
+function valueInput(def,value,onchange,allowVars=true){let n;if(def.type==='select'){n=select([''].concat(def.values||[]),value);n.addEventListener('change',()=>onchange(n.value));return n}if(def.type==='boolean'){n=select(['','Ja','Nein'],value);n.addEventListener('change',()=>onchange(n.value));return n}if(def.type==='textarea'){n=el('textarea');n.value=value||''}else{const t={number:'number',date:'date',datetime:'datetime-local'}[def.type]||'text';n=el('input',{type:t,value:value||''})}n.addEventListener('input',()=>onchange(n.value));n.addEventListener('change',()=>onchange(n.value));return n}
+function addFieldEditor(container,st,forcedKey=null){const sf={id:'step-field-'+crypto.randomUUID(),key:forcedKey||CONFIG.fields[0]?.key||'',value:'',enabled:true};st.fields.push(sf);drawSteps()}
+let mask=null,openSteps=new Set(['0']);
+function relevantKeys(a){return {customer:['CustomerID','CustomerUserID'],queue:['Queue'],owner:['Owner'],responsible:['Responsible'],state:['State','PendingTime'],priority:['Priority'],type:['Type'],service:['Service'],sla:['SLA']}[a]||null}
+function ensureActionFields(st){const keys=relevantKeys(st.action);if(keys)keys.forEach(k=>{if(!st.fields.some(f=>f.key===k)&&CONFIG.fields.some(f=>f.key===k))st.fields.push({id:'step-field-'+crypto.randomUUID(),key:k,value:'',enabled:true})})}
+function drawFieldRows(box,st,locked=false){st.fields.forEach((sf,fi)=>{const def=fieldDef(sf.key),isStartRequired=st===mask.steps[0]&&['Type','Queue','Service'].includes(sf.key);sf.enabled=true;if(isStartRequired){const row=el('div',{class:'required-field'}),val=valueInput(def,sf.value,v=>sf.value=v);row.append(el('label',{},def.label),val);box.append(row);return}const r=el('div',{class:'row fieldrow'}),key=select(CONFIG.fields.map(f=>f.key),sf.key);if(locked)key.disabled=true;key.onchange=()=>{sf.key=key.value;sf.value='';drawSteps()};const val=valueInput(fieldDef(sf.key),sf.value,v=>sf.value=v),del=el('button',{type:'button',class:'danger'},'Entfernen');del.onclick=()=>{st.fields.splice(fi,1);drawSteps()};r.append(labeled('Znuny-Feld',key,'c4'),labeled('Wert',val,'c6'),labeled('',del,'c2'));box.append(r)})}
+function variableNames(text){const out=[],rx=/\$\$([A-Za-z0-9_ÄÖÜäöüß.-]+)|\$\$\{([^}]{1,120})\}/g;let m;while((m=rx.exec(text||''))){const name=(m[1]||m[2]).trim();if(name&&!out.includes(name))out.push(name)}return out}
+function customerTokens(text){const out=[],rx=/\$§(https?:\/\/[^\s<>"']+|[A-Za-z0-9_ÄÖÜäöüß.-]+)|\$§\{([^}]{1,240})\}/g;let m;while((m=rx.exec(text||''))){const raw=(m[1]||m[2]).trim();if(raw&&!out.some(x=>x.raw===raw))out.push({raw,isForm:/^https?:\/\//i.test(raw),label:customerLabel(raw)})}return out}
+function customerLabel(raw){if(!/^https?:\/\//i.test(raw))return raw;try{const u=new URL(raw),part=decodeURIComponent(u.pathname.split('/').filter(Boolean).pop()||u.hostname);return part.replace(/[-_]+/g,' ')||'Formular'}catch{return 'Formular'}}
+function openVariable(name){scanVars();const v=mask.variables.find(x=>x.name===name);if(!v)return;const overlay=$('#edit-overlay'),body=$('#edit-overlay-body');$('#edit-overlay-title').textContent='Variable: '+name;body.replaceChildren();const type=select(['text','number','select'],v.type),values=el('textarea',{class:'list-editor'}),prefill=el('input',{type:'text',value:v.prefill||''}),min=el('input',{type:'number',value:v.minimum??''}),max=el('input',{type:'number',value:v.maximum??''});values.value=(v.values||[]).join('\n');const typeRow=labeled('Typ',type,'c12'),valuesRow=labeled('Auswahlliste',values,'c12'),prefillRow=labeled('Vorgabewert',prefill,'c12'),minRow=labeled('Minimum',min,'c6'),maxRow=labeled('Maximum',max,'c6');function visibility(){valuesRow.classList.toggle('hidden',type.value!=='select');minRow.classList.toggle('hidden',type.value!=='number');maxRow.classList.toggle('hidden',type.value!=='number');prefillRow.classList.toggle('hidden',type.value==='number')}type.onchange=visibility;body.append(typeRow,valuesRow,prefillRow,minRow,maxRow);visibility();$('#apply-edit-overlay').classList.remove('hidden');$('#apply-edit-overlay').onclick=()=>{v.type=type.value;v.values=[...new Set(values.value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean))];v.prefill=type.value==='number'?'':prefill.value;v.required=false;v.minimum=type.value==='number'&&min.value!==''?Number(min.value):null;v.maximum=type.value==='number'&&max.value!==''?Number(max.value):null;overlay.classList.add('hidden');status('Variable übernommen')};$('#close-edit-overlay').onclick=()=>overlay.classList.add('hidden');overlay.classList.remove('hidden')}
+function textEditor(label,value,onchange,area=true){const wrap=labeled(label,el('div'),'c12'),holder=wrap.lastChild,n=el(area?'textarea':'input',area?{}:{type:'text',maxlength:5000}),chips=el('div',{class:'variable-chips'});n.value=value||'';function refresh(){onchange(n.value);chips.replaceChildren();variableNames(n.value).forEach(name=>{const b=el('button',{type:'button',class:'variable-chip'},'$$'+name);b.onclick=()=>openVariable(name);chips.append(b)});customerTokens(n.value).forEach(token=>chips.append(el('span',{class:'variable-chip customer-chip'},token.isForm?'Dokument: '+token.label:'Kundenfeld: '+token.label)))}n.oninput=refresh;holder.append(n,chips);refresh();return wrap}
+function contextMenu(st,index,x,y){document.querySelectorAll('.context-menu').forEach(n=>n.remove());if(index===0)return;const menu=el('div',{class:'context-menu'}),duplicate=el('button',{type:'button'},'Duplizieren'),remove=el('button',{type:'button',class:'danger'},'Löschen');duplicate.onclick=()=>{const c=structuredClone(st);c.id='step-'+crypto.randomUUID();mask.steps.splice(index+1,0,c);menu.remove();drawSteps()};remove.onclick=()=>{mask.steps.splice(index,1);menu.remove();drawSteps()};menu.append(duplicate,remove);menu.style.left=Math.min(x,window.innerWidth-170)+'px';menu.style.top=Math.min(y,window.innerHeight-100)+'px';document.body.append(menu)}
+function drawSteps(){const root=$('#steps');root.replaceChildren();mask.steps.forEach((st,i)=>{ensureActionFields(st);const card=el('section',{class:'step','data-index':i,draggable:i>0?'true':'false'}),head=el('div',{class:'step-head'}),title=el('div',{class:'step-title'},`${i+1}. ${ACTIONS[st.action]||'Textfeld'}`);head.append(title);if(i>0)head.append(el('span',{class:'drag-handle','aria-hidden':'true'},'⋮⋮'));card.append(head);card.oncontextmenu=e=>{e.preventDefault();contextMenu(st,i,e.clientX,e.clientY)};if(i>0){card.ondragstart=e=>{e.dataTransfer.setData('text/plain',String(i));card.classList.add('dragging')};card.ondragend=()=>card.classList.remove('dragging');card.ondragover=e=>{e.preventDefault();card.classList.add('drag-over')};card.ondragleave=()=>card.classList.remove('drag-over');card.ondrop=e=>{e.preventDefault();card.classList.remove('drag-over');const from=Number(e.dataTransfer.getData('text/plain')),to=i;if(from<1||to<1||from===to)return;const [moved]=mask.steps.splice(from,1);mask.steps.splice(to,0,moved);drawSteps()}}
+ const body=el('div',{class:'step-body'}),fieldBox=el('div',{class:i===0?'required-fields':''});
+ if(st.action==='ticket-create'){drawFieldRows(fieldBox,st,true);body.append(fieldBox)}
+ else if(st.action==='ticket-edit'){drawFieldRows(fieldBox,st,false);body.append(fieldBox);const add=el('button',{type:'button',class:'small-add'},'Änderung hinzufügen');add.onclick=()=>addFieldEditor(fieldBox,st);body.append(add)}
+ if(['ticket-create','note','close'].includes(st.action)){const row=el('div',{class:'row'});row.append(textEditor('Betreff',st.subject,v=>st.subject=v,false),textEditor(st.action==='close'?'Abschlussnotiz':'Text',st.body,v=>st.body=v,true));body.append(row)}else if(st.action==='ticket-edit'){const row=el('div',{class:'row'});row.append(textEditor('Titel',st.subject,v=>st.subject=v,false));body.append(row)}
+ if(st.action==='link'){const l=st.links[0]||(st.links[0]={id:'link-'+crypto.randomUUID(),object:'Ticket',type:CONFIG.linkTypes[0]||'Normal',direction:'Target',target:''}),r=el('div',{class:'row link-editor'}),obj=select(['Ticket','Gerät'],l.object),typ=select(CONFIG.linkTypes,l.type),tar=el('input',{type:'text',value:l.target,placeholder:'ID, Ticketnummer oder $$Variable'});obj.onchange=()=>l.object=obj.value;typ.onchange=()=>l.type=typ.value;const targetWrap=labeled('ID / Nummer / Variable',tar,'c6'),targetChips=el('div',{class:'variable-chips'});function refreshTarget(){l.target=tar.value;targetChips.replaceChildren();variableNames(tar.value).forEach(name=>{const b=el('button',{type:'button',class:'variable-chip'},'$$'+name);b.onclick=()=>openVariable(name);targetChips.append(b)});customerTokens(tar.value).forEach(token=>targetChips.append(el('span',{class:'variable-chip customer-chip'},token.isForm?'Dokument: '+token.label:'Kundenfeld: '+token.label)))}tar.oninput=refreshTarget;targetWrap.append(targetChips);refreshTarget();r.append(labeled('Ziel',obj,'c3'),labeled('Linktyp',typ,'c3'),targetWrap);body.append(r)}
+ card.append(body);root.append(card)});}
+function scanVars(){const found=new Set(),rx=/\$\$([A-Za-z0-9_ÄÖÜäöüß.-]+)|\$\$\{([^}]{1,120})\}/g;mask.steps.forEach(st=>{[st.subject,st.body,...st.fields.map(f=>f.value),...st.links.map(l=>l.target),...Object.values(st.meta||{})].forEach(t=>{let m;while((m=rx.exec(t||'')))found.add((m[1]||m[2]).trim())})});found.forEach(name=>{if(!mask.variables.some(v=>v.name===name))mask.variables.push({id:'variable-'+crypto.randomUUID(),name,type:'text',values:[],prefill:'',minimum:null,maximum:null,required:false})});drawVars()}
+function drawVars(){}
+if(PAGE==='edit'){
+ mask=structuredClone(CURRENT);mask.variables=(mask.variables||[]).filter(v=>v.name!=='Owner');mask.published=true;$('#close-edit-overlay').onclick=()=>$('#edit-overlay').classList.add('hidden');const first=mask.steps[0],fixedKeys=['Type','Queue','Service'],uniqueFields=[];fixedKeys.forEach(key=>{const existing=first.fields.find(f=>f.key===key),def=fieldDef(key);uniqueFields.push(existing||{id:'step-field-'+crypto.randomUUID(),key,value:'',enabled:true})});first.fields=uniqueFields;$('#mask-name').value=mask.name;$('#mask-name').oninput=()=>mask.name=$('#mask-name').value;$('#add-step').onclick=()=>$('#overlay').classList.remove('hidden');$('#close-overlay').onclick=()=>$('#overlay').classList.add('hidden');Object.entries(ACTIONS).filter(([k])=>['ticket-edit','link','close','note'].includes(k)).forEach(([k,n])=>{const b=el('button',{},n);b.onclick=()=>{mask.steps.push(blankStep(k));openSteps.add(String(mask.steps.length-1));$('#overlay').classList.add('hidden');drawSteps()};$('#action-list').append(b)});$('#save-mask').onclick=async()=>{scanVars();const names=mask.variables.map(v=>v.name.trim());if(names.some((n,i)=>!n||names.indexOf(n)!==i)){status('Variablennamen müssen eindeutig und nicht leer sein.',true);return}const firstStep=mask.steps[0],requiredKeys=['Type','Queue','Service'];if(!firstStep.subject.trim()||!firstStep.body.trim()||requiredKeys.some(k=>!firstStep.fields.some(f=>f.key===k&&String(f.value).trim()))){status('Im ersten Schritt fehlen Type, To queue, Service, Subject oder Text.',true);return}try{const j=await api({op:'save-mask',mask});status('Maske gespeichert');if(!mask.id)location.href='?page=edit&id='+encodeURIComponent(j.id)}catch(e){status(e.message,true)}};drawSteps();
 }
-
-if(event.target.id==="menuClose"||event.target.id==="menuBackdrop"){
-var menu=document.getElementById("menuOverlay");
-menu.classList.remove("visible");
-menu.setAttribute("aria-hidden","true");
-return;
-}
-
-var removeButton=event.target.closest("[data-remove]");
-if(removeButton){
-var item=removeButton.closest(".editor-item");
-var parent=item.parentElement;
-if(parent.id==="steps"&&parent.querySelectorAll(".editor-item").length===1){
-window.alert("Mindestens ein Prozessschritt ist erforderlich.");
-return;
-}
-item.remove();
-return;
-}
-
-var upButton=event.target.closest("[data-up]");
-if(upButton){
-var upItem=upButton.closest(".editor-item");
-var previous=upItem.previousElementSibling;
-if(previous){
-upItem.parentElement.insertBefore(upItem,previous);
-}
-return;
-}
-
-var downButton=event.target.closest("[data-down]");
-if(downButton){
-var downItem=downButton.closest(".editor-item");
-var next=downItem.nextElementSibling;
-if(next){
-downItem.parentElement.insertBefore(next,downItem);
-}
-return;
-}
-});
-
-document.addEventListener("input",function(event){
-if(event.target.matches("[data-field-label]")){
-var fieldItem=event.target.closest(".editor-item");
-fieldItem.querySelector("[data-field-title]").textContent=event.target.value||"Unbenanntes Feld";
-}
-
-if(event.target.matches("[data-step-name]")){
-var stepItem=event.target.closest(".editor-item");
-stepItem.querySelector("[data-step-title]").textContent=event.target.value||"Unbenannter Schritt";
-}
-
-if(event.target.matches("[data-operation-input]")){
-var operationItem=event.target.closest(".editor-item");
-operationItem.querySelector("[data-operation-title]").textContent=event.target.value;
-}
-});
-
-var addField=document.getElementById("addField");
-var fields=document.getElementById("fields");
-var fieldTemplate=document.getElementById("fieldTemplate");
-
-if(addField&&fields&&fieldTemplate){
-addField.addEventListener("click",function(){
-fields.appendChild(fieldTemplate.content.firstElementChild.cloneNode(true));
-});
-}
-
-var addStep=document.getElementById("addStep");
-var steps=document.getElementById("steps");
-var stepTemplate=document.getElementById("stepTemplate");
-
-if(addStep&&steps&&stepTemplate){
-addStep.addEventListener("click",function(){
-steps.appendChild(stepTemplate.content.firstElementChild.cloneNode(true));
-});
-}
-
-var maskData=document.getElementById("maskData");
-if(!maskData){
-return;
-}
-
-var mask;
-try{
-mask=JSON.parse(maskData.textContent);
-}catch(error){
-return;
-}
-
-var workflow=document.getElementById("workflow");
-var variableText=document.getElementById("variableText");
-var names=[];
-var values={};
-var pattern=/\{\{([^{}]{1,80})\}\}/g;
-
-function collect(source){
-String(source||"").replace(pattern,function(match,name){
-name=name.trim();
-if(name!==""&&!Object.prototype.hasOwnProperty.call(values,name)){
-names.push(name);
-values[name]=name;
-}
-return match;
-});
-pattern.lastIndex=0;
-}
-
-(mask.fields||[]).forEach(function(field){
-collect(field.value);
-});
-
-(mask.steps||[]).forEach(function(step){
-collect(step.subject);
-collect(step.body);
-});
-
-function serialize(){
-return names.map(function(name){
-return name+": "+values[name];
-}).join("\n");
-}
-
-function parse(){
-var lines=variableText.value.split(/\r?\n/);
-var currentName=null;
-var parsed={};
-
-lines.forEach(function(line){
-var colon=line.indexOf(":");
-var candidate="";
-
-if(colon>=0){
-candidate=line.slice(0,colon).trim();
-}
-
-if(candidate!==""&&Object.prototype.hasOwnProperty.call(values,candidate)){
-currentName=candidate;
-parsed[currentName]=line.slice(colon+1).replace(/^\s/,"");
-return;
-}
-
-if(currentName!==null){
-parsed[currentName]+="\n"+line;
-}
-});
-
-names.forEach(function(name){
-if(Object.prototype.hasOwnProperty.call(parsed,name)){
-if(parsed[name]===""){
-values[name]=name;
-}else{
-values[name]=parsed[name];
-}
-}
-});
-}
-
-function valueOf(name){
-if(Object.prototype.hasOwnProperty.call(values,name)&&values[name]!==""){
-return values[name];
-}
-return name;
-}
-
-function focusVariable(name){
-var lines=variableText.value.split(/\r?\n/);
-var offset=0;
-
-for(var index=0;index<lines.length;index++){
-var line=lines[index];
-var colon=line.indexOf(":");
-
-if(colon>=0&&line.slice(0,colon).trim()===name){
-var start=offset+colon+1;
-while(start<offset+line.length&&variableText.value.charAt(start)===" "){
-start++;
-}
-variableText.focus();
-variableText.setSelectionRange(start,offset+line.length);
-break;
-}
-
-offset+=line.length+1;
-}
-
-document.querySelectorAll(".variable").forEach(function(button){
-if(button.getAttribute("data-variable")===name){
-button.classList.add("active");
-}else{
-button.classList.remove("active");
-}
-});
-}
-
-function renderTemplate(container,source){
-container.textContent="";
-var expression=/\{\{([^{}]{1,80})\}\}/g;
-var position=0;
-var match;
-
-while((match=expression.exec(String(source||"")))!==null){
-if(match.index>position){
-container.appendChild(document.createTextNode(String(source).slice(position,match.index)));
-}
-
-var name=match[1].trim();
-var button=document.createElement("button");
-button.type="button";
-button.className="variable";
-button.setAttribute("data-variable",name);
-button.textContent=valueOf(name);
-button.addEventListener("click",(function(variableName){
-return function(){
-focusVariable(variableName);
-};
-})(name));
-
-container.appendChild(button);
-position=expression.lastIndex;
-}
-
-if(position<String(source||"").length){
-container.appendChild(document.createTextNode(String(source).slice(position)));
-}
-}
-
-function render(){
-workflow.textContent="";
-
-(mask.steps||[]).forEach(function(step,index){
-if(index>0){
-var arrow=document.createElement("div");
-arrow.className="process-arrow";
-arrow.textContent="↓";
-workflow.appendChild(arrow);
-}
-
-var ticket=document.createElement("section");
-ticket.className="ticket";
-
-var header=document.createElement("div");
-header.className="ticket-header";
-
-var number=document.createElement("span");
-number.className="ticket-number";
-number.textContent=String(index+1);
-
-var title=document.createElement("strong");
-title.textContent=step.name||"Prozessschritt";
-
-var operation=document.createElement("span");
-operation.className="ticket-operation";
-operation.textContent=step.operation||"";
-
-header.appendChild(number);
-header.appendChild(title);
-header.appendChild(operation);
-ticket.appendChild(header);
-
-var ticketFields=document.createElement("div");
-ticketFields.className="ticket-fields";
-
-(mask.fields||[]).forEach(function(field){
-if(!field.label){
-return;
-}
-
-var label=document.createElement("div");
-label.className="ticket-label";
-label.textContent=field.label;
-
-var value=document.createElement("div");
-value.className="ticket-value";
-renderTemplate(value,field.value);
-
-ticketFields.appendChild(label);
-ticketFields.appendChild(value);
-});
-
-if(ticketFields.childNodes.length>0){
-ticket.appendChild(ticketFields);
-}
-
-var content=document.createElement("div");
-content.className="ticket-content";
-
-if(step.subject){
-var subject=document.createElement("div");
-subject.className="ticket-subject";
-renderTemplate(subject,step.subject);
-content.appendChild(subject);
-}
-
-var body=document.createElement("div");
-body.className="ticket-text";
-renderTemplate(body,step.body||"");
-content.appendChild(body);
-
-ticket.appendChild(content);
-workflow.appendChild(ticket);
-});
-}
-
-function plain(source){
-return String(source||"").replace(/\{\{([^{}]{1,80})\}\}/g,function(match,name){
-return valueOf(name.trim());
-});
-}
-
-function processOutput(){
-return (mask.steps||[]).map(function(step,index){
-var lines=[
-String(index+1)+". "+String(step.name||"Prozessschritt")
-];
-
-if(step.operation){
-lines.push("Prozessart: "+step.operation);
-}
-
-(mask.fields||[]).forEach(function(field){
-if(field.label){
-lines.push(field.label+": "+plain(field.value));
-}
-});
-
-if(step.subject){
-lines.push("Betreff: "+plain(step.subject));
-}
-
-lines.push("");
-lines.push(plain(step.body));
-
-return lines.join("\n").trim();
-}).join("\n\n========================================\n\n");
-}
-
-function copy(text,button){
-function fallback(){
-var area=document.createElement("textarea");
-area.value=text;
-area.style.position="fixed";
-area.style.left="-9999px";
-document.body.appendChild(area);
-area.select();
-document.execCommand("copy");
-area.remove();
-}
-
-function done(){
-var oldText=button.textContent;
-button.textContent="Kopiert";
-window.setTimeout(function(){
-button.textContent=oldText;
-},1000);
-}
-
-if(navigator.clipboard&&window.isSecureContext){
-navigator.clipboard.writeText(text).then(done).catch(function(){
-fallback();
-done();
-});
-}else{
-fallback();
-done();
-}
-}
-
-variableText.value=serialize();
-
-variableText.addEventListener("input",function(){
-parse();
-render();
-});
-
-document.getElementById("applyVariables").addEventListener("click",function(){
-parse();
-variableText.value=serialize();
-render();
-});
-
-document.getElementById("copyVariables").addEventListener("click",function(){
-copy(variableText.value,this);
-});
-
-document.getElementById("resetVariables").addEventListener("click",function(){
-names.forEach(function(name){
-values[name]=name;
-});
-variableText.value=serialize();
-render();
-});
-
-document.getElementById("copyProcess").addEventListener("click",function(){
-parse();
-copy(processOutput(),this);
-});
-
-render();
-})();
-</script>
-</body>
-</html>
+function replaceVars(text,values){return String(text||'').replace(/\$\$([A-Za-z0-9_ÄÖÜäöüß.-]+)|\$\$\{([^}]+)\}/g,(m,a,b)=>values[a||b]??'').replace(/\$§(https?:\/\/[^\s<>"']+|[A-Za-z0-9_ÄÖÜäöüß.-]+)|\$§\{([^}]+)\}/g,(m,a,b)=>{const raw=(a||b).trim();return /^https?:\/\//i.test(raw)?customerLabel(raw):(values['customer:'+raw]??'')})}
+function hasCopyableText(text){return String(text||'').replace(/\$§(https?:\/\/[^\s<>"']+|[A-Za-z0-9_ÄÖÜäöüß.-]+)|\$§\{([^}]+)\}/g,'').trim()!==''}
+function appendRichText(node,text,values){const source=String(text||''),rx=/(\$\$[A-Za-z0-9_ÄÖÜäöüß.-]+|\$\$\{[^}]+\}|\$§https?:\/\/[^\s<>"']+|\$§[A-Za-z0-9_ÄÖÜäöüß.-]+|\$§\{[^}]+\})/g;let pos=0,m;while((m=rx.exec(source))){node.append(document.createTextNode(source.slice(pos,m.index)));const token=m[0];if(token.startsWith('$§')){const raw=token.startsWith('$§{')?token.slice(3,-1):token.slice(2);if(/^https?:\/\//i.test(raw)){const a=el('a',{class:'customer-form',href:raw,target:'_blank',rel:'noopener noreferrer'},customerLabel(raw));node.append(a)}else{const key='customer:'+raw,span=el('span',{class:'customer-inline'},values[key]||('Kundeninput: '+raw));node.append(span)}}else{const name=token.startsWith('$${')?token.slice(3,-1):token.slice(2);node.append(document.createTextNode(values[name]??''))}pos=rx.lastIndex}node.append(document.createTextNode(source.slice(pos)))}
+async function copyPlain(text){const value=String(text);try{if(navigator.clipboard&&window.isSecureContext)await navigator.clipboard.writeText(value);else{const area=el('textarea');area.value=value;area.style.position='fixed';area.style.opacity='0';document.body.append(area);area.select();if(!document.execCommand('copy'))throw new Error('copy');area.remove()}status('Text kopiert')}catch{status('Kopieren nicht möglich',true)}}
+if(PAGE==='view'&&CURRENT){const values={};CURRENT.variables=(CURRENT.variables||[]).filter(v=>v.name!=='Owner');CURRENT.variables.forEach(v=>values[v.name]=v.prefill||'');const vr=$('#public-vars');if(!CURRENT.variables.length){vr.closest('.public-sidebar').classList.add('hidden');vr.closest('.public-layout').classList.add('no-sidebar')}CURRENT.variables.forEach(v=>{let n;if(v.type==='select')n=select([''].concat(v.values||[]),v.prefill||'');else if(v.type==='number')n=el('input',{type:'number',min:v.minimum??'',max:v.maximum??'',placeholder:v.name,value:'',class:'var-input'});else n=el('input',{type:'text',placeholder:v.name,value:v.prefill||'',class:'var-input'});n.setAttribute('aria-label',v.name);n.classList.add('var-input');n.oninput=n.onchange=()=>{values[v.name]=n.value;renderPublic()};vr.append(n)});
+ function renderPublic(){const root=$('#public-steps');root.replaceChildren();CURRENT.steps.forEach((st,i)=>{const c=el('section',{class:'ticket'}),h=el('h2',{},`${i+1}. ${ACTIONS[st.action]||'Freier Schritt'}`);const body=el('div',{class:'content'});if(i===0){const top=el('div',{class:'ticket-start-fields'});['Type','Queue','Service'].forEach(key=>{const f=(st.fields||[]).find(x=>x.enabled&&x.key===key);if(!f)return;const item=el('div',{class:'ticket-start-field'}),valueBox=el('span');appendRichText(valueBox,f.value,values);item.append(el('strong',{},fieldDef(f.key).label),valueBox);top.append(item)});body.append(top)}(st.fields||[]).filter(f=>f.enabled&&(i!==0||!['Type','Queue','Service'].includes(f.key))).forEach(f=>{const r=el('div',{class:'kv'});const valueBox=el('span');appendRichText(valueBox,f.value,values);r.append(el('strong',{},fieldDef(f.key).label),valueBox);body.append(r)});if(st.subject){const subject=replaceVars(st.subject,values),line=el('div',{class:'text-block'}),subjectBox=el('div',{class:'copyable'});appendRichText(subjectBox,st.subject,values);line.append(el('strong',{},st.action==='ticket-edit'?'Titel':'Betreff'),subjectBox);if(hasCopyableText(st.subject)){const b=el('button',{class:'copy-inline'},st.action==='ticket-edit'?'Titel kopieren':'Betreff kopieren');b.onclick=()=>copyPlain(subject);line.append(b)}body.append(line)}if(st.body){const wrap=el('div',{class:'text-block'});wrap.append(el('strong',{},'Text'));const p=el('div',{class:'copyable'});String(st.body||'').split('\n').forEach((line,j)=>{if(j)p.append(document.createElement('br'));appendRichText(p,line,values)});wrap.append(p);if(hasCopyableText(st.body)){const b=el('button',{class:'copy-inline'},'Text kopieren');b.onclick=()=>copyPlain(replaceVars(st.body,values));wrap.append(b)}body.append(wrap)};(st.links||[]).filter(l=>String(l.target||'').trim()).forEach(l=>{const r=el('div',{class:'kv'});const linkValue=el('span');linkValue.append(document.createTextNode(l.type+' · '));appendRichText(linkValue,l.target,values);r.append(el('strong',{},'Verknüpfung'),linkValue);body.append(r)});c.append(h,body);root.append(c)})}renderPublic();}
+</script></body></html>
