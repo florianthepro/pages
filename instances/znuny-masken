@@ -5,88 +5,46 @@ ini_set('log_errors','1');
 error_reporting(E_ALL);
 const DATA_FILE=__DIR__.'/masks.json';
 const MAX_POST_SIZE=2097152;
-session_name('znuny_mask_builder');
-session_set_cookie_params(['lifetime'=>0,'path'=>'/','secure'=>!empty($_SERVER['HTTPS'])&&$_SERVER['HTTPS']!=='off','httponly'=>true,'samesite'=>'Strict']);
+session_name('znuny_masks');
+session_set_cookie_params(['lifetime'=>0,'path'=>'/','secure'=>isset($_SERVER['HTTPS'])&&$_SERVER['HTTPS']!=='off','httponly'=>true,'samesite'=>'Strict']);
 session_start();
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: SAMEORIGIN');
 header('Referrer-Policy: same-origin');
-function e($value):string{
+function h($value):string{
 return htmlspecialchars((string)$value,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
 }
-function cut($value,$length=20000):string{
+function valueText($value,int $limit=20000):string{
 if(!is_string($value)){return '';}
 $value=trim(str_replace("\0",'',$value));
-return function_exists('mb_substr')?mb_substr($value,0,$length,'UTF-8'):substr($value,0,$length);
+return function_exists('mb_substr')?mb_substr($value,0,$limit,'UTF-8'):substr($value,0,$limit);
 }
-function newId():string{
-try{return bin2hex(random_bytes(10));}catch(Throwable $error){return str_replace('.','',uniqid('',true));}
+function createId():string{
+try{return bin2hex(random_bytes(12));}
+catch(Throwable $exception){return str_replace('.','',uniqid('',true));}
 }
-function defaultData():array{
-return [
-'settings'=>[
-'ticketTypes'=>['Incident','ServiceRequest','Change','Problem','Operation&Maintenance'],
-'queues'=>['Support','Consulting','Management'],
-'services'=>['Basic Support','Managed Service','Internal'],
-'states'=>['new','open','pending reminder','closed successful','closed unsuccessful']
-],
-'masks'=>[
-[
-'id'=>'supportanruf',
-'name'=>'Supportanruf',
-'description'=>'Neues Supportticket mit Bearbeitungs- und Abschlussnotiz.',
-'published'=>true,
-'steps'=>[
-[
-'id'=>'ticket',
-'action'=>'ticket',
-'name'=>'Ticket erstellen',
-'type'=>'Incident',
-'queue'=>'Support',
-'service'=>'Basic Support',
-'state'=>'new',
-'subject'=>'[{{Kundenkürzel}}][KAT.1] {{Kurzbeschreibung}}',
-'body'=>"Kunde rief an: {{Name}}\nTelefonnummer: {{Telefonnummer}}\nGerät: {{Gerät}}\n\nProbleme:\n{{Problembeschreibung}}\n\nFestgestellt:\n{{Festgestellt}}"
-],
-[
-'id'=>'note',
-'action'=>'note',
-'name'=>'Abschlussnotiz',
-'type'=>'',
-'queue'=>'',
-'service'=>'',
-'state'=>'closed successful',
-'subject'=>'Lösung des Problems',
-'body'=>"Durchgeführte Maßnahmen:\n{{Maßnahmen}}\n\nLösung:\n{{Lösung}}\n\nInterne Notiz:\n{{Interne Notiz}}"
-]
-],
-'updatedAt'=>gmdate('c')
-]
-]
-];
+function initialData():array{
+return ['settings'=>['ticketTypes'=>[],'queues'=>[],'services'=>[],'states'=>[]],'masks'=>[]];
 }
-function createStorage():void{
+function initializeData():void{
 if(is_file(DATA_FILE)){return;}
-$json=json_encode(defaultData(),JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+$json=json_encode(initialData(),JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
 if($json===false||file_put_contents(DATA_FILE,$json,LOCK_EX)===false){
 http_response_code(500);
-exit('masks.json konnte nicht erstellt werden. Der Ordner muss für PHP beschreibbar sein.');
+exit('masks.json konnte nicht angelegt werden.');
 }
 @chmod(DATA_FILE,0660);
 }
 function loadData():array{
-createStorage();
+initializeData();
 $handle=@fopen(DATA_FILE,'rb');
-if($handle===false){http_response_code(500);exit('masks.json kann nicht gelesen werden.');}
-if(!flock($handle,LOCK_SH)){fclose($handle);http_response_code(500);exit('masks.json kann nicht gesperrt werden.');}
+if($handle===false){http_response_code(500);exit('masks.json konnte nicht geöffnet werden.');}
+if(!flock($handle,LOCK_SH)){fclose($handle);http_response_code(500);exit('masks.json konnte nicht gesperrt werden.');}
 $json=stream_get_contents($handle);
 flock($handle,LOCK_UN);
 fclose($handle);
 $data=json_decode((string)$json,true);
-if(json_last_error()!==JSON_ERROR_NONE||!is_array($data)){
-http_response_code(500);
-exit('masks.json enthält ungültiges JSON: '.e(json_last_error_msg()));
-}
+if(json_last_error()!==JSON_ERROR_NONE||!is_array($data)){http_response_code(500);exit('masks.json enthält ungültiges JSON.');}
 if(!isset($data['settings'])||!is_array($data['settings'])){$data['settings']=[];}
 foreach(['ticketTypes','queues','services','states'] as $key){
 if(!isset($data['settings'][$key])||!is_array($data['settings'][$key])){$data['settings'][$key]=[];}
@@ -96,36 +54,43 @@ return $data;
 }
 function saveData(array $data):void{
 $json=json_encode($data,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
-if($json===false){throw new RuntimeException('Die Daten konnten nicht als JSON verarbeitet werden.');}
-$temp=DATA_FILE.'.tmp';
-$handle=@fopen($temp,'c+b');
-if($handle===false){throw new RuntimeException('Die temporäre JSON-Datei ist nicht beschreibbar.');}
-if(!flock($handle,LOCK_EX)){fclose($handle);throw new RuntimeException('Die JSON-Datei konnte nicht gesperrt werden.');}
-$success=ftruncate($handle,0)&&rewind($handle);
-$written=$success?fwrite($handle,$json):false;
-$success=$success&&$written!==false&&$written===strlen($json)&&fflush($handle);
+if($json===false){throw new RuntimeException('JSON konnte nicht erzeugt werden.');}
+$temp=DATA_FILE.'.tmp.'.createId();
+$handle=@fopen($temp,'xb');
+if($handle===false){throw new RuntimeException('Temporäre Datei konnte nicht erstellt werden.');}
+if(!flock($handle,LOCK_EX)){fclose($handle);@unlink($temp);throw new RuntimeException('Datei konnte nicht gesperrt werden.');}
+$length=strlen($json);
+$written=0;
+$success=true;
+while($written<$length){
+$result=fwrite($handle,substr($json,$written));
+if($result===false||$result===0){$success=false;break;}
+$written+=$result;
+}
+$success=$success&&fflush($handle);
 flock($handle,LOCK_UN);
 fclose($handle);
-if(!$success){@unlink($temp);throw new RuntimeException('masks.json konnte nicht vollständig geschrieben werden.');}
+if(!$success){@unlink($temp);throw new RuntimeException('masks.json konnte nicht geschrieben werden.');}
 @chmod($temp,0660);
 if(!@rename($temp,DATA_FILE)){@unlink($temp);throw new RuntimeException('masks.json konnte nicht ersetzt werden.');}
 }
-function token():string{
-if(empty($_SESSION['csrf'])||!is_string($_SESSION['csrf'])){
-try{$_SESSION['csrf']=bin2hex(random_bytes(32));}catch(Throwable $error){$_SESSION['csrf']=hash('sha256',uniqid('',true));}
+function csrfToken():string{
+if(!isset($_SESSION['csrf'])||!is_string($_SESSION['csrf'])){
+try{$_SESSION['csrf']=bin2hex(random_bytes(32));}
+catch(Throwable $exception){$_SESSION['csrf']=hash('sha256',uniqid('',true));}
 }
 return $_SESSION['csrf'];
 }
-function verifyToken():void{
-$value=isset($_POST['csrf'])&&is_string($_POST['csrf'])?$_POST['csrf']:'';
-if(!hash_equals(token(),$value)){http_response_code(403);exit('Ungültige Anfrage.');}
+function verifyCsrf():void{
+$token=isset($_POST['csrf'])&&is_string($_POST['csrf'])?$_POST['csrf']:'';
+if(!hash_equals(csrfToken(),$token)){http_response_code(403);exit('Ungültige Anfrage.');}
 }
-function listValues($value):array{
+function textList($value):array{
 if(!is_string($value)){return [];}
-$items=preg_split('/\R/u',$value);
+$lines=preg_split('/\R/u',$value);
 $result=[];
-foreach(is_array($items)?$items:[] as $item){
-$item=cut($item,120);
+foreach(is_array($lines)?$lines:[] as $line){
+$item=valueText($line,120);
 if($item!==''&&!in_array($item,$result,true)){$result[]=$item;}
 }
 return $result;
@@ -140,7 +105,7 @@ if(is_array($mask)&&(string)($mask['id']??'')===$id){return $mask;}
 return null;
 }
 function maskFromPost():array{
-$name=cut($_POST['name']??'',120);
+$name=valueText($_POST['name']??'',120);
 if($name===''){throw new RuntimeException('Der Maskenname fehlt.');}
 $ids=postArray('step_id');
 $names=postArray('step_name');
@@ -151,98 +116,86 @@ $services=postArray('step_service');
 $states=postArray('step_state');
 $subjects=postArray('step_subject');
 $bodies=postArray('step_body');
-if(count($actions)<1){throw new RuntimeException('Mindestens ein Schritt ist erforderlich.');}
-if(count($actions)>100){throw new RuntimeException('Maximal 100 Schritte sind erlaubt.');}
+$count=count($actions);
+if($count<1){throw new RuntimeException('Mindestens ein Prozessschritt ist erforderlich.');}
+if($count>100){throw new RuntimeException('Maximal 100 Prozessschritte sind erlaubt.');}
 $steps=[];
-foreach($actions as $index=>$rawAction){
-$action=cut($rawAction,20);
+for($index=0;$index<$count;$index++){
+$action=valueText($actions[$index]??'',20);
 if(!in_array($action,['ticket','note'],true)){$action='note';}
-$stepName=cut($names[$index]??'',120);
-if($stepName===''){throw new RuntimeException('Jeder Schritt benötigt eine Bezeichnung.');}
-$stepId=cut($ids[$index]??'',64);
+$stepName=valueText($names[$index]??'',120);
+if($stepName===''){throw new RuntimeException('Jeder Prozessschritt benötigt einen Namen.');}
+$stepId=valueText($ids[$index]??'',64);
 $steps[]=[
-'id'=>$stepId!==''?$stepId:newId(),
+'id'=>$stepId!==''?$stepId:createId(),
 'action'=>$action,
 'name'=>$stepName,
-'type'=>cut($types[$index]??'',120),
-'queue'=>cut($queues[$index]??'',120),
-'service'=>cut($services[$index]??'',120),
-'state'=>cut($states[$index]??'',120),
-'subject'=>cut($subjects[$index]??'',500),
-'body'=>cut($bodies[$index]??'',20000)
+'type'=>valueText($types[$index]??'',120),
+'queue'=>valueText($queues[$index]??'',120),
+'service'=>valueText($services[$index]??'',120),
+'state'=>valueText($states[$index]??'',120),
+'subject'=>valueText($subjects[$index]??'',500),
+'body'=>valueText($bodies[$index]??'',20000)
 ];
 }
-$id=cut($_POST['mask_id']??'',64);
-return [
-'id'=>$id!==''?$id:newId(),
-'name'=>$name,
-'description'=>cut($_POST['description']??'',2000),
-'published'=>isset($_POST['published']),
-'steps'=>$steps,
-'updatedAt'=>gmdate('c')
-];
+$id=valueText($_POST['mask_id']??'',64);
+return ['id'=>$id!==''?$id:createId(),'name'=>$name,'description'=>valueText($_POST['description']??'',2000),'published'=>isset($_POST['published']),'updatedAt'=>gmdate('c'),'steps'=>$steps];
 }
-function placeholders(array $mask):array{
-$result=[];
-foreach($mask['steps']??[] as $step){
-if(!is_array($step)){continue;}
-foreach(['subject','body'] as $field){
-preg_match_all('/\{\{([^{}]{1,80})\}\}/u',(string)($step[$field]??''),$matches);
-foreach($matches[1]??[] as $name){
-$name=trim((string)$name);
-if($name!==''&&!in_array($name,$result,true)){$result[]=$name;}
+function selectOptions(array $values,string $selected):void{
+echo '<option value="">Keine Auswahl</option>';
+foreach($values as $value){
+$value=(string)$value;
+echo '<option value="'.h($value).'"'.($value===$selected?' selected':'').'>'.h($value).'</option>';
 }
-}
-}
-return $result;
 }
 if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'&&(int)($_SERVER['CONTENT_LENGTH']??0)>MAX_POST_SIZE){
 http_response_code(413);
 exit('Die Anfrage ist zu groß.');
 }
 $data=loadData();
-$page=cut($_GET['_page']??'',30);
-$editId=cut($_GET['_edit']??'',64);
-$maskId=cut($_GET['_mask']??'',64);
+$page=valueText($_GET['_page']??'',30);
+$editId=valueText($_GET['_edit']??'',64);
+$maskId=valueText($_GET['_mask']??'',64);
+$tab=($_GET['_tab']??'')==='settings'?'settings':'masks';
 $message='';
 $error='';
 if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
 try{
-verifyToken();
-$action=cut($_POST['action']??'',30);
+verifyCsrf();
+$action=valueText($_POST['action']??'',30);
 if($action==='save_settings'){
 $data['settings']=[
-'ticketTypes'=>listValues($_POST['ticketTypes']??''),
-'queues'=>listValues($_POST['queues']??''),
-'services'=>listValues($_POST['services']??''),
-'states'=>listValues($_POST['states']??'')
+'ticketTypes'=>textList($_POST['ticketTypes']??''),
+'queues'=>textList($_POST['queues']??''),
+'services'=>textList($_POST['services']??''),
+'states'=>textList($_POST['states']??'')
 ];
 saveData($data);
-header('Location: ?_page=edit&_saved=settings');
+header('Location: ?_page=edit&_tab=settings&_result=settings');
 exit;
 }
 if($action==='save_mask'){
 $mask=maskFromPost();
-$found=false;
+$updated=false;
 foreach($data['masks'] as $index=>$stored){
 if(is_array($stored)&&(string)($stored['id']??'')===$mask['id']){
 $data['masks'][$index]=$mask;
-$found=true;
+$updated=true;
 break;
 }
 }
-if(!$found){$data['masks'][]=$mask;}
+if(!$updated){$data['masks'][]=$mask;}
 saveData($data);
-header('Location: ?_page=edit&_edit='.rawurlencode($mask['id']).'&_saved=mask');
+header('Location: ?_page=edit&_edit='.rawurlencode($mask['id']).'&_result=mask');
 exit;
 }
 if($action==='delete_mask'){
-$id=cut($_POST['mask_id']??'',64);
+$id=valueText($_POST['mask_id']??'',64);
 $data['masks']=array_values(array_filter($data['masks'],static function($mask)use($id){
 return !is_array($mask)||(string)($mask['id']??'')!==$id;
 }));
 saveData($data);
-header('Location: ?_page=edit&_deleted=1');
+header('Location: ?_page=edit&_result=deleted');
 exit;
 }
 throw new RuntimeException('Unbekannte Aktion.');
@@ -250,9 +203,9 @@ throw new RuntimeException('Unbekannte Aktion.');
 $error=$exception->getMessage();
 }
 }
-if(($_GET['_saved']??'')==='settings'){$message='Feste Werte gespeichert.';}
-if(($_GET['_saved']??'')==='mask'){$message='Maske gespeichert.';}
-if(isset($_GET['_deleted'])){$message='Maske gelöscht.';}
+if(($_GET['_result']??'')==='settings'){$message='Feste Werte gespeichert.';}
+if(($_GET['_result']??'')==='mask'){$message='Maske gespeichert.';}
+if(($_GET['_result']??'')==='deleted'){$message='Maske gelöscht.';}
 $editedMask=$editId!==''&&$editId!=='new'?findMask($data,$editId):null;
 $selectedMask=$maskId!==''?findMask($data,$maskId):null;
 ?>
@@ -262,21 +215,20 @@ $selectedMask=$maskId!==''?findMask($data,$maskId):null;
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>Znuny Masken</title>
+<title>Znuny-Prozesse</title>
 <style>
-:root{--bg:#fff;--fg:#141414;--muted:#5a5f66;--border:#d5d7dd;--panel:#f5f6f8;--panel2:#e9ebef;--accent:#0a63ff;--accentfg:#fff;--danger:#b3261e;--dangerbg:#fde7e7;--success:#1a7f37;--successbg:#e6f4ea;--ctrl:#141414;--ctrlfg:#fff;--shadow:rgba(0,0,0,.18)}
-@media(prefers-color-scheme:dark){:root{--bg:#0f1113;--fg:#e8e8ea;--muted:#a6adb6;--border:#2b3038;--panel:#17191d;--panel2:#20242a;--accent:#5b9bff;--accentfg:#07101f;--danger:#ff7777;--dangerbg:#3f1d1d;--success:#5bd47e;--successbg:#163a22;--ctrl:#20242a;--ctrlfg:#e8e8ea;--shadow:rgba(0,0,0,.6)}}
+:root{--bg:#fff;--fg:#171717;--muted:#60656d;--border:#d5d8de;--panel:#f5f6f8;--panel2:#e9ebef;--accent:#0a63ff;--accentfg:#fff;--danger:#b3261e;--dangerbg:#fde7e7;--success:#1a7f37;--successbg:#e6f4ea;--shadow:rgba(0,0,0,.18);--field:#fff8d8;--fieldborder:#b48b00}
+@media(prefers-color-scheme:dark){:root{--bg:#101214;--fg:#e8e8ea;--muted:#a6adb6;--border:#2c3138;--panel:#181b1f;--panel2:#22262c;--accent:#6ca5ff;--accentfg:#07101f;--danger:#ff7777;--dangerbg:#3f1d1d;--success:#5bd47e;--successbg:#163a22;--shadow:rgba(0,0,0,.6);--field:#3d3514;--fieldborder:#d5ae2c}}
 *{box-sizing:border-box}
-body{margin:0;padding:18px;background:var(--bg);color:var(--fg);font-family:Arial,Helvetica,sans-serif;font-size:14px}
-main{max-width:1400px;margin:0 auto;padding-top:52px}
-h1{margin:0 0 16px;font-size:22px}
-h2{margin:0 0 12px;font-size:17px}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px Arial,Helvetica,sans-serif}
+main{max-width:1260px;margin:0 auto;padding:72px 20px 30px}
+h1{margin:0 0 18px;font-size:22px}
+h2{margin:0 0 14px;font-size:17px}
 h3{margin:0;font-size:15px}
-a{color:var(--accent)}
-button,.button{display:inline-block;padding:8px 12px;border:1px solid var(--accent);border-radius:3px;background:var(--accent);color:var(--accentfg);font:inherit;font-weight:bold;text-decoration:none;cursor:pointer}
-button.secondary,.button.secondary{border-color:var(--border);background:var(--panel);color:var(--fg)}
+button{padding:8px 12px;border:1px solid var(--accent);border-radius:3px;background:var(--accent);color:var(--accentfg);font:inherit;font-weight:bold;cursor:pointer}
+button.secondary{border-color:var(--border);background:var(--panel);color:var(--fg)}
 button.danger{border-color:var(--danger);background:var(--danger);color:#fff}
-button.small,.button.small{padding:5px 8px;font-size:12px}
+button.small{padding:5px 8px;font-size:12px}
 input,textarea,select{width:100%;padding:8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--fg);font:inherit}
 textarea{min-height:90px;resize:vertical}
 label{display:block;margin-bottom:5px;color:var(--muted);font-size:12px;font-weight:bold}
@@ -285,69 +237,79 @@ form{margin:0}
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .full{grid-column:1/-1}
 .actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.notice,.error{margin-bottom:12px;padding:10px;border-radius:3px}
+.notice,.error{margin-bottom:14px;padding:10px;border-radius:3px}
 .notice{border:1px solid var(--success);background:var(--successbg)}
 .error{border:1px solid var(--danger);background:var(--dangerbg)}
 .muted{color:var(--muted);font-size:12px}
 .hidden{display:none!important}
-.mask-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
-.mask-card{display:flex;flex-direction:column;gap:10px;padding:14px;border:1px solid var(--border);border-radius:4px;background:var(--panel)}
-.mask-card p{margin:0;color:var(--muted);line-height:1.4}
-.mask-card .actions{margin-top:auto}
 .tabs{display:flex;gap:8px;margin-bottom:14px}
-.step{margin-bottom:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg)}
-.step-head{display:flex;align-items:center;gap:8px;padding:10px;border-bottom:1px solid var(--border);background:var(--panel2)}
-.step-head span{color:var(--muted);font-size:12px}
-.step-head button{margin-left:auto}
-.step-body{padding:12px}
-.placeholder-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
-.preview-step{margin-bottom:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg)}
-.preview-head{display:flex;align-items:center;gap:8px;padding:9px 10px;border-bottom:1px solid var(--border);background:var(--panel2)}
-.preview-head button{margin-left:auto}
-.preview-body{padding:12px}
-.preview-meta{display:grid;grid-template-columns:130px 1fr;gap:5px 10px;margin:0 0 12px}
-.preview-meta dt{font-weight:bold;color:var(--muted)}
-.preview-meta dd{margin:0}
-.preview-subject,.preview-text{padding:10px;border:1px solid var(--border);background:var(--panel);white-space:pre-wrap}
-.preview-subject{margin-bottom:8px;font-weight:bold}
-.preview-text{min-height:60px}
-.empty{padding:20px;border:1px dashed var(--border);color:var(--muted);text-align:center}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+.card{display:flex;flex-direction:column;gap:10px;padding:14px;border:1px solid var(--border);border-radius:4px;background:var(--panel)}
+.card p{margin:0;color:var(--muted);line-height:1.45}
+.card .actions{margin-top:auto}
+.empty{padding:28px;border:1px dashed var(--border);color:var(--muted);text-align:center}
+.editor-step{margin-bottom:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg)}
+.editor-step-header{display:flex;align-items:center;gap:8px;padding:10px;border-bottom:1px solid var(--border);background:var(--panel2)}
+.editor-step-header span{color:var(--muted);font-size:12px}
+.editor-step-controls{display:flex;gap:5px;margin-left:auto}
+.editor-step-body{padding:12px}
+.menu-button{position:fixed;top:10px;left:10px;z-index:1001;padding:10px 14px;border:0;background:#171717;color:#fff;font-size:20px}
+.menu-overlay{position:fixed;inset:0;display:none;z-index:1000}
+.menu-overlay.visible{display:block}
+.menu-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.55)}
+.menu-panel{position:absolute;top:0;left:0;width:260px;height:100%;padding:20px;background:var(--panel);box-shadow:2px 0 10px var(--shadow);transform:translateX(-100%);transition:transform .2s ease-out}
+.menu-overlay.visible .menu-panel{transform:translateX(0)}
+.menu-close{display:block;margin-left:auto;padding:0;border:0;background:transparent;color:var(--fg);font-size:28px}
+.menu-title{margin:12px 0 20px;font-size:17px;font-weight:bold}
+.menu-nav{display:flex;flex-direction:column;gap:8px}
+.menu-nav button{width:100%;border-color:var(--border);background:transparent;color:var(--fg);text-align:left}
+.menu-nav button:hover{background:var(--panel2)}
+.workspace{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:16px;align-items:start}
+.workflow{min-width:0}
+.variable-panel{position:sticky;top:18px}
+.variable-list{display:flex;flex-direction:column;gap:10px}
+.variable-row{display:grid;grid-template-columns:1fr auto;gap:6px}
+.variable-row label{grid-column:1/-1;margin:0}
+.variable-row textarea{min-height:58px}
+.import-box{min-height:110px}
+.ticket{margin-bottom:18px;border:1px solid var(--border);border-radius:4px;background:var(--bg);overflow:hidden}
+.ticket-header{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--border);background:var(--panel2)}
+.ticket-number{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:var(--accent);color:var(--accentfg);font-weight:bold}
+.ticket-kind{margin-left:auto;color:var(--muted);font-size:12px}
+.ticket-fields{display:grid;grid-template-columns:150px minmax(0,1fr)}
+.ticket-label,.ticket-value{padding:8px 10px;border-bottom:1px solid var(--border)}
+.ticket-label{background:var(--panel);color:var(--muted);font-weight:bold}
+.ticket-value{min-width:0}
+.ticket-content{padding:14px}
+.ticket-subject{margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border);font-weight:bold;line-height:1.6}
+.ticket-text{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.65}
+.editable-variable{display:inline-block;min-width:52px;padding:1px 4px;border:1px dashed var(--fieldborder);border-radius:2px;background:var(--field);color:var(--fg);cursor:text;white-space:pre-wrap;vertical-align:baseline}
+.editable-variable:focus{outline:2px solid var(--accent);outline-offset:1px}
+.process-arrow{display:flex;align-items:center;justify-content:center;height:26px;color:var(--muted);font-size:18px}
 code{padding:2px 4px;background:var(--panel2);border-radius:2px}
-.fk-menu-btn{position:fixed;top:10px;left:10px;z-index:999999;background:var(--ctrl);color:var(--ctrlfg);border:none;padding:10px 14px;font-size:20px;cursor:pointer;border-radius:4px}
-.fk-menu-overlay{position:fixed;inset:0;display:none;z-index:999998}
-.fk-menu-overlay.is-visible{display:block}
-.fk-menu-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.55)}
-.fk-menu-panel{position:absolute;top:0;left:0;width:280px;height:100%;background:var(--panel);padding:20px;box-shadow:2px 0 10px var(--shadow);transform:translateX(-100%);transition:transform .25s ease-out}
-.fk-menu-overlay.is-visible .fk-menu-panel{transform:translateX(0)}
-.fk-menu-close{display:block;margin-left:auto;padding:0;border:none;background:none;color:var(--fg);font-size:28px}
-.fk-menu-title{margin:10px 0 20px;font-size:17px;font-weight:bold}
-.fk-menu-nav{display:flex;flex-direction:column;gap:8px}
-.fk-menu-link{padding:9px;border-radius:3px;color:var(--fg);font-size:16px;text-decoration:none}
-.fk-menu-link:hover{background:var(--panel2);color:var(--accent)}
-@media(max-width:760px){body{padding:12px}.grid{grid-template-columns:1fr}.full{grid-column:auto}.preview-meta{grid-template-columns:1fr}.fk-menu-panel{width:min(280px,85vw)}}
+@media(max-width:900px){.workspace{grid-template-columns:1fr}.variable-panel{position:static}}
+@media(max-width:700px){main{padding:68px 12px 24px}.grid{grid-template-columns:1fr}.full{grid-column:auto}.ticket-fields{grid-template-columns:1fr}.ticket-label{border-bottom:0;padding-bottom:2px}.ticket-value{padding-top:2px}.menu-panel{width:min(260px,85vw)}}
 </style>
 </head>
 <body>
-<button type="button" class="fk-menu-btn" data-menu-button aria-label="Menü öffnen">☰</button>
-<div class="fk-menu-overlay" data-menu-overlay aria-hidden="true">
-<div class="fk-menu-backdrop" data-menu-close></div>
-<aside class="fk-menu-panel" aria-label="Navigation">
-<button type="button" class="fk-menu-close" data-menu-close aria-label="Menü schließen">×</button>
-<div class="fk-menu-title">Znuny Masken</div>
-<nav class="fk-menu-nav">
-./Masken verwenden</a>
-?_page=editMasken verwalten</a>
-?_page=edit&_edit=newNeue Maske</a>
-?_page=edit&_tab=settingsFeste Werte</a>
-</nav>
-</aside>
+<button type="button" class="menu-button" id="menuButton" aria-label="Menü öffnen">☰</button>
+<div class="menu-overlay" id="menuOverlay" aria-hidden="true">
+<div class="menu-backdrop" id="menuBackdrop"></div>
+<div class="menu-panel">
+<button type="button" class="menu-close" id="menuClose" aria-label="Menü schließen">×</button>
+<div class="menu-title">Znuny-Prozesse</div>
+<div class="menu-nav">
+<button type="button" data-go="./">Masken</button>
+<button type="button" data-go="?_page=edit">Verwaltung</button>
+</div>
+</div>
 </div>
 <main>
 <?php if($message!==''): ?>
-<div class="notice"><?=e($message)?></div>
+<div class="notice"><?=h($message)?></div>
 <?php endif; ?>
 <?php if($error!==''): ?>
-<div class="error"><?=e($error)?></div>
+<div class="error"><?=h($error)?></div>
 <?php endif; ?>
 <?php if($page==='edit'): ?>
 <h1>Maskenverwaltung</h1>
@@ -355,42 +317,47 @@ code{padding:2px 4px;background:var(--panel2);border-radius:2px}
 <button type="button" class="secondary" data-tab-button="masks">Masken</button>
 <button type="button" class="secondary" data-tab-button="settings">Feste Werte</button>
 </div>
-<section data-tab="settings" class="<?=($_GET['_tab']??'')==='settings'?'':'hidden'?>">
+<section data-tab="settings" class="<?=$tab==='settings'?'':'hidden'?>">
 <form method="post" class="panel">
-<input type="hidden" name="csrf" value="<?=e(token())?>">
+<input type="hidden" name="csrf" value="<?=h(csrfToken())?>">
 <input type="hidden" name="action" value="save_settings">
-<h2>Feste Znuny-Werte</h2>
+<h2>Feste Werte</h2>
 <div class="grid">
-<div><label for="ticketTypes">Tickettypen, ein Wert pro Zeile</label><textarea id="ticketTypes" name="ticketTypes"><?=e(implode("\n",$data['settings']['ticketTypes']))?></textarea></div>
-<div><label for="queues">Queues, ein Wert pro Zeile</label><textarea id="queues" name="queues"><?=e(implode("\n",$data['settings']['queues']))?></textarea></div>
-<div><label for="services">Services, ein Wert pro Zeile</label><textarea id="services" name="services"><?=e(implode("\n",$data['settings']['services']))?></textarea></div>
-<div><label for="states">Statuswerte, ein Wert pro Zeile</label><textarea id="states" name="states"><?=e(implode("\n",$data['settings']['states']))?></textarea></div>
+<div><label for="ticketTypes">Tickettypen</label><textarea id="ticketTypes" name="ticketTypes" placeholder="Ein Wert pro Zeile"><?=h(implode("\n",$data['settings']['ticketTypes']))?></textarea></div>
+<div><label for="queues">Queues</label><textarea id="queues" name="queues" placeholder="Ein Wert pro Zeile"><?=h(implode("\n",$data['settings']['queues']))?></textarea></div>
+<div><label for="services">Services</label><textarea id="services" name="services" placeholder="Ein Wert pro Zeile"><?=h(implode("\n",$data['settings']['services']))?></textarea></div>
+<div><label for="states">Statuswerte</label><textarea id="states" name="states" placeholder="Ein Wert pro Zeile"><?=h(implode("\n",$data['settings']['states']))?></textarea></div>
 </div>
 <div class="actions" style="margin-top:12px"><button type="submit">Speichern</button></div>
 </form>
 </section>
-<section data-tab="masks" class="<?=($_GET['_tab']??'')==='settings'?'hidden':''?>">
+<section data-tab="masks" class="<?=$tab==='masks'?'':'hidden'?>">
 <?php if($editId===''): ?>
-<div class="actions" style="margin-bottom:14px">?_page=edit&amp;_edit=newNeue Maske</a></div>
-<div class="mask-list">
-<?php foreach($data['masks'] as $mask): if(!is_array($mask)){continue;} ?>
-<article class="mask-card">
-<h3><?=e($mask['name']??'')?></h3>
-<p><?=nl2br(e($mask['description']??''))?></p>
+<div class="actions" style="margin-bottom:14px">
+<button type="button" data-go="?_page=edit&amp;_edit=new">Neue Maske</button>
+</div>
+<div class="cards">
+<?php foreach($data['masks'] as $mask): ?>
+<?php if(!is_array($mask)){continue;} ?>
+<div class="card">
+<h3><?=h($mask['name']??'')?></h3>
+<p><?=nl2br(h($mask['description']??''))?></p>
 <div class="muted"><?=count(is_array($mask['steps']??null)?$mask['steps']:[])?> Schritte · <?=!empty($mask['published'])?'Veröffentlicht':'Verborgen'?></div>
 <div class="actions">
-($mask['id']??''))?>">Bearbeiten</a>
-($mask['id']??''))?>" target="_blank" rel="noopener">Testen</a>
+<button type="button" class="secondary small" data-go="?_page=edit&amp;_edit=<?=rawurlencode((string)($mask['id']??''))?>">Bearbeiten</button>
+<button type="button" class="secondary small" data-go="?_mask=<?=rawurlencode((string)($mask['id']??''))?>">Öffnen</button>
 <form method="post" onsubmit="return confirm('Maske wirklich löschen?')">
-<input type="hidden" name="csrf" value="<?=e(token())?>">
+<input type="hidden" name="csrf" value="<?=h(csrfToken())?>">
 <input type="hidden" name="action" value="delete_mask">
-<input type="hidden" name="mask_id" value="<?=e($mask['id']??'')?>">
+<input type="hidden" name="mask_id" value="<?=h($mask['id']??'')?>">
 <button type="submit" class="danger small">Löschen</button>
 </form>
 </div>
-</article>
+</div>
 <?php endforeach; ?>
-<?php if(count($data['masks'])===0): ?><div class="empty">Noch keine Masken vorhanden.</div><?php endif; ?>
+<?php if(count($data['masks'])===0): ?>
+<div class="empty">Keine Masken vorhanden.</div>
+<?php endif; ?>
 </div>
 <?php else: ?>
 <?php
@@ -400,184 +367,424 @@ $formMask=$editedMask??[
 'description'=>'',
 'published'=>true,
 'steps'=>[
-['id'=>'','action'=>'ticket','name'=>'Ticket erstellen','type'=>'','queue'=>'','service'=>'','state'=>'new','subject'=>'','body'=>'']
+['id'=>'','action'=>'ticket','name'=>'Ticket erstellen','type'=>'','queue'=>'','service'=>'','state'=>'','subject'=>'','body'=>'']
 ]
 ];
 ?>
 <form method="post">
-<input type="hidden" name="csrf" value="<?=e(token())?>">
+<input type="hidden" name="csrf" value="<?=h(csrfToken())?>">
 <input type="hidden" name="action" value="save_mask">
-<input type="hidden" name="mask_id" value="<?=e($formMask['id']??'')?>">
+<input type="hidden" name="mask_id" value="<?=h($formMask['id']??'')?>">
 <div class="panel">
-<h2>Maskeneigenschaften</h2>
+<h2>Maske</h2>
 <div class="grid">
-<div><label for="name">Name</label><input id="name" name="name" maxlength="120" required value="<?=e($formMask['name']??'')?>"></div>
-<div><label>Veröffentlichung</label><label style="font-size:14px;color:var(--fg);font-weight:normal"><input style="width:auto" type="checkbox" name="published" <?=!empty($formMask['published'])?'checked':''?>> Auf der Startseite anzeigen</label></div>
-<div class="full"><label for="description">Beschreibung</label><textarea id="description" name="description" maxlength="2000"><?=e($formMask['description']??'')?></textarea></div>
+<div><label for="name">Name</label><input id="name" name="name" maxlength="120" required value="<?=h($formMask['name']??'')?>"></div>
+<div><label>Veröffentlichung</label><label style="font-size:14px;color:var(--fg);font-weight:normal"><input type="checkbox" name="published" style="width:auto" <?=!empty($formMask['published'])?'checked':''?>> Auf der Startseite anzeigen</label></div>
+<div class="full"><label for="description">Beschreibung</label><textarea id="description" name="description" maxlength="2000"><?=h($formMask['description']??'')?></textarea></div>
 </div>
 </div>
 <div class="panel">
-<div class="actions" style="justify-content:space-between;margin-bottom:12px"><h2>Ticketverlauf</h2><button type="button" id="addStep">Schritt hinzufügen</button></div>
-<div class="muted" style="margin-bottom:12px">Dynamische Eingabefelder werden mit <code>{{Name}}</code> in Betreff oder Textvorlage angelegt.</div>
+<div class="actions" style="justify-content:space-between;margin-bottom:12px">
+<h2>Prozessschritte</h2>
+<button type="button" id="addStep">Schritt hinzufügen</button>
+</div>
+<div class="muted" style="margin-bottom:12px">Variablen werden als <code>{{Name}}</code> geschrieben. Derselbe Variablenname wird später überall gemeinsam bearbeitet.</div>
 <div id="steps">
 <?php foreach($formMask['steps'] as $step): ?>
-<article class="step">
-<div class="step-head"><strong data-step-title><?=e($step['name']??'Schritt')?></strong><span data-step-kind><?=($step['action']??'note')==='ticket'?'Neues Ticket':'Notiz'?></span><button type="button" class="danger small" data-remove-step>Entfernen</button></div>
-<div class="step-body">
-<input type="hidden" name="step_id[]" value="<?=e($step['id']??'')?>">
+<div class="editor-step">
+<div class="editor-step-header">
+<strong data-step-title><?=h($step['name']??'Schritt')?></strong>
+<span data-step-kind><?=($step['action']??'note')==='ticket'?'Ticket':'Notiz'?></span>
+<div class="editor-step-controls">
+<button type="button" class="secondary small" data-move-up>↑</button>
+<button type="button" class="secondary small" data-move-down>↓</button>
+<button type="button" class="danger small" data-remove-step>Entfernen</button>
+</div>
+</div>
+<div class="editor-step-body">
+<input type="hidden" name="step_id[]" value="<?=h($step['id']??'')?>">
 <div class="grid">
-<div><label>Schrittbezeichnung</label><input name="step_name[]" required maxlength="120" data-step-name value="<?=e($step['name']??'')?>"></div>
-<div><label>Aktion</label><select name="step_action[]" data-step-action><option value="ticket" <?=($step['action']??'')==='ticket'?'selected':''?>>Neues Ticket</option><option value="note" <?=($step['action']??'')!=='ticket'?'selected':''?>>Notiz</option></select></div>
-<div><label>Tickettyp</label><input name="step_type[]" list="ticketTypeList" value="<?=e($step['type']??'')?>"></div>
-<div><label>Queue</label><input name="step_queue[]" list="queueList" value="<?=e($step['queue']??'')?>"></div>
-<div><label>Service</label><input name="step_service[]" list="serviceList" value="<?=e($step['service']??'')?>"></div>
-<div><label>Status</label><input name="step_state[]" list="stateList" value="<?=e($step['state']??'')?>"></div>
-<div class="full"><label>Betreff</label><input name="step_subject[]" maxlength="500" value="<?=e($step['subject']??'')?>"></div>
-<div class="full"><label>Textvorlage</label><textarea name="step_body[]" maxlength="20000"><?=e($step['body']??'')?></textarea></div>
+<div><label>Bezeichnung</label><input name="step_name[]" maxlength="120" required data-step-name value="<?=h($step['name']??'')?>"></div>
+<div><label>Schrittart</label><select name="step_action[]" data-step-action><option value="ticket" <?=($step['action']??'')==='ticket'?'selected':''?>>Ticket erstellen</option><option value="note" <?=($step['action']??'')==='note'?'selected':''?>>Notiz hinzufügen</option></select></div>
+<div><label>Tickettyp</label><select name="step_type[]"><?php selectOptions($data['settings']['ticketTypes'],(string)($step['type']??'')); ?></select></div>
+<div><label>Queue</label><select name="step_queue[]"><?php selectOptions($data['settings']['queues'],(string)($step['queue']??'')); ?></select></div>
+<div><label>Service</label><select name="step_service[]"><?php selectOptions($data['settings']['services'],(string)($step['service']??'')); ?></select></div>
+<div><label>Status</label><select name="step_state[]"><?php selectOptions($data['settings']['states'],(string)($step['state']??'')); ?></select></div>
+<div class="full"><label>Betreff</label><input name="step_subject[]" maxlength="500" value="<?=h($step['subject']??'')?>"></div>
+<div class="full"><label>Text</label><textarea name="step_body[]" maxlength="20000"><?=h($step['body']??'')?></textarea></div>
 </div>
 </div>
-</article>
+</div>
 <?php endforeach; ?>
 </div>
-<div class="actions"><button type="submit">Maske speichern</button>?_page=editAbbrechen</a></div>
+<div class="actions">
+<button type="submit">Maske speichern</button>
+<button type="button" class="secondary" data-go="?_page=edit">Abbrechen</button>
+</div>
 </div>
 </form>
-<datalist id="ticketTypeList"><?php foreach($data['settings']['ticketTypes'] as $value): ?><option value="<?=e($value)?>"><?php endforeach; ?></datalist>
-<datalist id="queueList"><?php foreach($data['settings']['queues'] as $value): ?><option value="<?=e($value)?>"><?php endforeach; ?></datalist>
-<datalist id="serviceList"><?php foreach($data['settings']['services'] as $value): ?><option value="<?=e($value)?>"><?php endforeach; ?></datalist>
-<datalist id="stateList"><?php foreach($data['settings']['states'] as $value): ?><option value="<?=e($value)?>"><?php endforeach; ?></datalist>
 <template id="stepTemplate">
-<article class="step">
-<div class="step-head"><strong data-step-title>Neuer Schritt</strong><span data-step-kind>Notiz</span><button type="button" class="danger small" data-remove-step>Entfernen</button></div>
-<div class="step-body">
+<div class="editor-step">
+<div class="editor-step-header">
+<strong data-step-title>Neuer Schritt</strong>
+<span data-step-kind>Notiz</span>
+<div class="editor-step-controls">
+<button type="button" class="secondary small" data-move-up>↑</button>
+<button type="button" class="secondary small" data-move-down>↓</button>
+<button type="button" class="danger small" data-remove-step>Entfernen</button>
+</div>
+</div>
+<div class="editor-step-body">
 <input type="hidden" name="step_id[]" value="">
 <div class="grid">
-<div><label>Schrittbezeichnung</label><input name="step_name[]" required maxlength="120" data-step-name value="Neuer Schritt"></div>
-<div><label>Aktion</label><select name="step_action[]" data-step-action><option value="ticket">Neues Ticket</option><option value="note" selected>Notiz</option></select></div>
-<div><label>Tickettyp</label><input name="step_type[]" list="ticketTypeList"></div>
-<div><label>Queue</label><input name="step_queue[]" list="queueList"></div>
-<div><label>Service</label><input name="step_service[]" list="serviceList"></div>
-<div><label>Status</label><input name="step_state[]" list="stateList"></div>
+<div><label>Bezeichnung</label><input name="step_name[]" maxlength="120" required data-step-name value="Neuer Schritt"></div>
+<div><label>Schrittart</label><select name="step_action[]" data-step-action><option value="ticket">Ticket erstellen</option><option value="note" selected>Notiz hinzufügen</option></select></div>
+<div><label>Tickettyp</label><select name="step_type[]"><?php selectOptions($data['settings']['ticketTypes'],''); ?></select></div>
+<div><label>Queue</label><select name="step_queue[]"><?php selectOptions($data['settings']['queues'],''); ?></select></div>
+<div><label>Service</label><select name="step_service[]"><?php selectOptions($data['settings']['services'],''); ?></select></div>
+<div><label>Status</label><select name="step_state[]"><?php selectOptions($data['settings']['states'],''); ?></select></div>
 <div class="full"><label>Betreff</label><input name="step_subject[]" maxlength="500"></div>
-<div class="full"><label>Textvorlage</label><textarea name="step_body[]" maxlength="20000"></textarea></div>
+<div class="full"><label>Text</label><textarea name="step_body[]" maxlength="20000"></textarea></div>
 </div>
 </div>
-</article>
+</div>
 </template>
 <?php endif; ?>
 </section>
 <?php elseif($selectedMask!==null): ?>
-<?php $fields=placeholders($selectedMask); ?>
-<h1><?=e($selectedMask['name']??'')?></h1>
-<?php if(!empty($selectedMask['description'])): ?><div class="panel"><?=nl2br(e($selectedMask['description']))?></div><?php endif; ?>
-<div class="panel">
-<h2>Angaben</h2>
-<?php if(count($fields)===0): ?>
-<div class="muted">Diese Maske enthält keine dynamischen Eingabefelder.</div>
-<?php else: ?>
-<div class="placeholder-grid">
-<?php foreach($fields as $field): ?>
-<div><label for="field_<?=e(hash('sha256',$field))?>"><?=e($field)?></label><textarea id="field_<?=e(hash('sha256',$field))?>" data-placeholder="<?=e($field)?>" rows="2"></textarea></div>
-<?php endforeach; ?>
-</div>
+<h1><?=h($selectedMask['name']??'')?></h1>
+<?php if(!empty($selectedMask['description'])): ?>
+<div class="panel"><?=nl2br(h($selectedMask['description']))?></div>
 <?php endif; ?>
+<div class="workspace">
+<div class="workflow" id="workflow"></div>
+<aside class="variable-panel">
+<div class="panel">
+<h2>Variablen</h2>
+<div class="variable-list" id="variableList"></div>
+<div class="actions" style="margin-top:12px">
+<button type="button" id="copyVariables">Kopieren</button>
+<button type="button" class="secondary" id="clearVariables">Leeren</button>
 </div>
-<div class="actions" style="margin-bottom:14px"><button type="button" id="copyAll">Gesamten Verlauf kopieren</button><button type="button" class="secondary" id="clearFields">Leeren</button>./Zurück</a></div>
-<div id="preview"></div>
+</div>
+<div class="panel">
+<h2>Variablen einfügen</h2>
+<textarea class="import-box" id="variableImport" placeholder="Name: Max Mustermann&#10;Telefon: 089 123456"></textarea>
+<div class="actions" style="margin-top:10px">
+<button type="button" id="applyVariables">Übernehmen</button>
+</div>
+</div>
+<div class="panel">
+<button type="button" id="copyProcess">Gesamten Prozess kopieren</button>
+</div>
+</aside>
+</div>
 <script id="maskData" type="application/json"><?=json_encode($selectedMask,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?></script>
 <?php else: ?>
-<h1>Verfügbare Znuny-Masken</h1>
-<div class="mask-list">
-<?php $count=0;foreach($data['masks'] as $mask):if(!is_array($mask)||empty($mask['published'])){continue;}$count++; ?>
-<article class="mask-card">
-<h3><?=e($mask['name']??'')?></h3>
-<p><?=nl2br(e($mask['description']??''))?></p>
-<div class="muted"><?=count(is_array($mask['steps']??null)?$mask['steps']:[])?> Schritte</div>
-<div class="actions">($mask['id']??''))?>">Maske verwenden</a></div>
-</article>
+<h1>Znuny-Prozesse</h1>
+<div class="cards">
+<?php
+$published=0;
+foreach($data['masks'] as $mask):
+if(!is_array($mask)||empty($mask['published'])){continue;}
+$published++;
+?>
+<div class="card">
+<h3><?=h($mask['name']??'')?></h3>
+<p><?=nl2br(h($mask['description']??''))?></p>
+<div class="muted"><?=count(is_array($mask['steps']??null)?$mask['steps']:[])?> Prozessschritte</div>
+<div class="actions"><button type="button" data-go="?_mask=<?=rawurlencode((string)($mask['id']??''))?>">Öffnen</button></div>
+</div>
 <?php endforeach; ?>
-<?php if($count===0): ?><div class="empty">Keine veröffentlichten Masken vorhanden.</div><?php endif; ?>
+<?php if($published===0): ?>
+<div class="empty">Keine veröffentlichten Masken vorhanden.</div>
+<?php endif; ?>
 </div>
 <?php endif; ?>
 </main>
 <script>
 (function(){
 "use strict";
-var menuButton=document.querySelector("[data-menu-button]");
-var menuOverlay=document.querySelector("[data-menu-overlay]");
-document.querySelectorAll("[data-menu-close]").forEach(function(element){element.addEventListener("click",closeMenu)});
-function openMenu(){menuOverlay.classList.add("is-visible");menuOverlay.setAttribute("aria-hidden","false");document.documentElement.style.overflow="hidden"}
-function closeMenu(){menuOverlay.classList.remove("is-visible");menuOverlay.setAttribute("aria-hidden","true");document.documentElement.style.overflow=""}
-if(menuButton){menuButton.addEventListener("click",function(){menuOverlay.classList.contains("is-visible")?closeMenu():openMenu()})}
+document.querySelectorAll("[data-go]").forEach(function(button){
+button.addEventListener("click",function(){window.location.href=button.getAttribute("data-go")});
+});
+var menuButton=document.getElementById("menuButton");
+var menuOverlay=document.getElementById("menuOverlay");
+var menuBackdrop=document.getElementById("menuBackdrop");
+var menuClose=document.getElementById("menuClose");
+function openMenu(){
+menuOverlay.classList.add("visible");
+menuOverlay.setAttribute("aria-hidden","false");
+document.documentElement.style.overflow="hidden";
+}
+function closeMenu(){
+menuOverlay.classList.remove("visible");
+menuOverlay.setAttribute("aria-hidden","true");
+document.documentElement.style.overflow="";
+}
+menuButton.addEventListener("click",function(){menuOverlay.classList.contains("visible")?closeMenu():openMenu()});
+menuBackdrop.addEventListener("click",closeMenu);
+menuClose.addEventListener("click",closeMenu);
 document.addEventListener("keydown",function(event){if(event.key==="Escape"){closeMenu()}});
 document.querySelectorAll("[data-tab-button]").forEach(function(button){
 button.addEventListener("click",function(){
-document.querySelectorAll("[data-tab]").forEach(function(section){section.classList.toggle("hidden",section.dataset.tab!==button.dataset.tabButton)});
+document.querySelectorAll("[data-tab]").forEach(function(section){
+section.classList.toggle("hidden",section.getAttribute("data-tab")!==button.getAttribute("data-tab-button"));
+});
 });
 });
 function bindStep(step){
 var remove=step.querySelector("[data-remove-step]");
+var up=step.querySelector("[data-move-up]");
+var down=step.querySelector("[data-move-down]");
 var name=step.querySelector("[data-step-name]");
 var action=step.querySelector("[data-step-action]");
 var title=step.querySelector("[data-step-title]");
 var kind=step.querySelector("[data-step-kind]");
-if(remove){remove.addEventListener("click",function(){if(document.querySelectorAll("#steps .step").length<=1){alert("Mindestens ein Schritt ist erforderlich.");return}step.remove()})}
-if(name&&title){name.addEventListener("input",function(){title.textContent=name.value||"Unbenannter Schritt"})}
-if(action&&kind){action.addEventListener("change",function(){kind.textContent=action.value==="ticket"?"Neues Ticket":"Notiz"})}
+remove.addEventListener("click",function(){
+if(document.querySelectorAll("#steps .editor-step").length<=1){alert("Mindestens ein Prozessschritt ist erforderlich.");return}
+step.remove();
+});
+up.addEventListener("click",function(){var previous=step.previousElementSibling;if(previous){step.parentNode.insertBefore(step,previous)}});
+down.addEventListener("click",function(){var next=step.nextElementSibling;if(next){step.parentNode.insertBefore(next,step)}});
+name.addEventListener("input",function(){title.textContent=name.value||"Unbenannter Schritt"});
+action.addEventListener("change",function(){kind.textContent=action.value==="ticket"?"Ticket":"Notiz"});
 }
-document.querySelectorAll("#steps .step").forEach(bindStep);
+document.querySelectorAll("#steps .editor-step").forEach(bindStep);
 var addStep=document.getElementById("addStep");
-var template=document.getElementById("stepTemplate");
+var stepTemplate=document.getElementById("stepTemplate");
 var steps=document.getElementById("steps");
-if(addStep&&template&&steps){addStep.addEventListener("click",function(){var step=template.content.firstElementChild.cloneNode(true);steps.appendChild(step);bindStep(step);step.scrollIntoView({behavior:"smooth",block:"center"})})}
-var dataNode=document.getElementById("maskData");
-if(!dataNode){return}
-var mask=JSON.parse(dataNode.textContent);
-var preview=document.getElementById("preview");
-var inputs=Array.from(document.querySelectorAll("[data-placeholder]"));
-function inputValues(){var result={};inputs.forEach(function(input){result[input.dataset.placeholder]=input.value});return result}
-function renderText(text,values){return String(text||"").replace(/\{\{([^{}]{1,80})\}\}/gu,function(match,name){return values[name.trim()]||""})}
-function stepOutput(step,index,values){
-var lines=[(index+1)+". "+(step.name||"Schritt"),"Aktion: "+(step.action==="ticket"?"Neues Ticket":"Notiz")];
+if(addStep&&stepTemplate&&steps){
+addStep.addEventListener("click",function(){
+var step=stepTemplate.content.firstElementChild.cloneNode(true);
+steps.appendChild(step);
+bindStep(step);
+step.scrollIntoView({behavior:"smooth",block:"center"});
+});
+}
+var maskNode=document.getElementById("maskData");
+if(!maskNode){return}
+var mask;
+try{mask=JSON.parse(maskNode.textContent)}catch(error){return}
+var workflow=document.getElementById("workflow");
+var variableList=document.getElementById("variableList");
+var values={};
+function collectVariables(){
+(mask.steps||[]).forEach(function(step){
+["subject","body"].forEach(function(field){
+String(step[field]||"").replace(/\{\{([^{}]{1,80})\}\}/g,function(match,name){
+name=name.trim();
+if(name&&!Object.prototype.hasOwnProperty.call(values,name)){values[name]=""}
+return match;
+});
+});
+});
+}
+function renderTemplate(container,text){
+container.textContent="";
+var source=String(text||"");
+var expression=/\{\{([^{}]{1,80})\}\}/g;
+var position=0;
+var match;
+while((match=expression.exec(source))!==null){
+if(match.index>position){container.appendChild(document.createTextNode(source.slice(position,match.index)))}
+var name=match[1].trim();
+var field=document.createElement("span");
+field.className="editable-variable";
+field.contentEditable="true";
+field.spellcheck=false;
+field.setAttribute("data-variable",name);
+field.setAttribute("role","textbox");
+field.setAttribute("aria-label",name);
+field.textContent=values[name]||name;
+field.addEventListener("focus",function(){
+if(!values[name]&&field.textContent===name){
+var selection=window.getSelection();
+var range=document.createRange();
+range.selectNodeContents(field);
+selection.removeAllRanges();
+selection.addRange(range);
+}
+});
+field.addEventListener("input",function(){
+values[name]=field.textContent.replace(/\r/g,"");
+synchronizeVariable(name,field);
+});
+container.appendChild(field);
+position=expression.lastIndex;
+}
+if(position<source.length){container.appendChild(document.createTextNode(source.slice(position)))}
+}
+function synchronizeVariable(name,source){
+document.querySelectorAll("[data-variable]").forEach(function(element){
+if(element===source||element.getAttribute("data-variable")!==name){return}
+if(element.tagName==="TEXTAREA"){element.value=values[name]}else{element.textContent=values[name]||name}
+});
+}
+function renderVariables(){
+variableList.textContent="";
+Object.keys(values).forEach(function(name){
+var row=document.createElement("div");
+row.className="variable-row";
+var label=document.createElement("label");
+label.textContent=name;
+var input=document.createElement("textarea");
+input.rows=2;
+input.value=values[name];
+input.setAttribute("data-variable",name);
+input.addEventListener("input",function(){
+values[name]=input.value;
+synchronizeVariable(name,input);
+});
+var copy=document.createElement("button");
+copy.type="button";
+copy.className="secondary small";
+copy.textContent="Kopieren";
+copy.addEventListener("click",function(){copyText(values[name],copy)});
+row.appendChild(label);
+row.appendChild(input);
+row.appendChild(copy);
+variableList.appendChild(row);
+});
+if(Object.keys(values).length===0){
+var empty=document.createElement("div");
+empty.className="muted";
+empty.textContent="Keine Variablen vorhanden.";
+variableList.appendChild(empty);
+}
+}
+function addTicketField(container,label,value){
+if(!value){return}
+var labelElement=document.createElement("div");
+var valueElement=document.createElement("div");
+labelElement.className="ticket-label";
+valueElement.className="ticket-value";
+labelElement.textContent=label;
+valueElement.textContent=value;
+container.appendChild(labelElement);
+container.appendChild(valueElement);
+}
+function renderWorkflow(){
+workflow.textContent="";
+(mask.steps||[]).forEach(function(step,index){
+if(index>0){
+var arrow=document.createElement("div");
+arrow.className="process-arrow";
+arrow.textContent="↓";
+workflow.appendChild(arrow);
+}
+var ticket=document.createElement("section");
+ticket.className="ticket";
+var header=document.createElement("div");
+header.className="ticket-header";
+var number=document.createElement("span");
+number.className="ticket-number";
+number.textContent=String(index+1);
+var title=document.createElement("strong");
+title.textContent=step.name||"Prozessschritt";
+var kind=document.createElement("span");
+kind.className="ticket-kind";
+kind.textContent=step.action==="ticket"?"Ticket":"Notiz";
+header.appendChild(number);
+header.appendChild(title);
+header.appendChild(kind);
+var fields=document.createElement("div");
+fields.className="ticket-fields";
+addTicketField(fields,"Tickettyp",step.type);
+addTicketField(fields,"Queue",step.queue);
+addTicketField(fields,"Service",step.service);
+addTicketField(fields,"Status",step.state);
+var content=document.createElement("div");
+content.className="ticket-content";
+if(step.subject){
+var subject=document.createElement("div");
+subject.className="ticket-subject";
+renderTemplate(subject,step.subject);
+content.appendChild(subject);
+}
+var text=document.createElement("div");
+text.className="ticket-text";
+renderTemplate(text,step.body);
+content.appendChild(text);
+ticket.appendChild(header);
+if(fields.childNodes.length){ticket.appendChild(fields)}
+ticket.appendChild(content);
+workflow.appendChild(ticket);
+});
+}
+function textWithValues(text){
+return String(text||"").replace(/\{\{([^{}]{1,80})\}\}/g,function(match,name){
+name=name.trim();
+return values[name]||name;
+});
+}
+function processText(){
+return (mask.steps||[]).map(function(step,index){
+var lines=[];
+lines.push((index+1)+". "+String(step.name||"Prozessschritt"));
+lines.push("Art: "+(step.action==="ticket"?"Ticket":"Notiz"));
 if(step.type){lines.push("Tickettyp: "+step.type)}
 if(step.queue){lines.push("Queue: "+step.queue)}
 if(step.service){lines.push("Service: "+step.service)}
 if(step.state){lines.push("Status: "+step.state)}
-if(step.subject){lines.push("Betreff: "+renderText(step.subject,values))}
-lines.push("",renderText(step.body,values));
-return lines.join("\n").trim()
+if(step.subject){lines.push("Betreff: "+textWithValues(step.subject))}
+lines.push("");
+lines.push(textWithValues(step.body));
+return lines.join("\n").trim();
+}).join("\n\n========================================\n\n");
 }
-function copy(value,button){
-function done(){var original=button.textContent;button.textContent="Kopiert";setTimeout(function(){button.textContent=original},1200)}
-if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(value).then(done).catch(function(){legacyCopy(value);done()})}else{legacyCopy(value);done()}
+function variableText(){
+return Object.keys(values).map(function(name){return name+": "+values[name]}).join("\n");
 }
-function legacyCopy(value){var area=document.createElement("textarea");area.value=value;area.style.position="fixed";area.style.left="-9999px";document.body.appendChild(area);area.select();document.execCommand("copy");area.remove()}
-function meta(list,label,value){if(!value){return}var dt=document.createElement("dt");var dd=document.createElement("dd");dt.textContent=label;dd.textContent=value;list.append(dt,dd)}
-function render(){
-var values=inputValues();preview.textContent="";
-(mask.steps||[]).forEach(function(step,index){
-var section=document.createElement("section");section.className="preview-step";
-var header=document.createElement("div");header.className="preview-head";
-var title=document.createElement("strong");title.textContent=(index+1)+". "+(step.name||"Schritt");
-var kind=document.createElement("span");kind.className="muted";kind.textContent=step.action==="ticket"?"Neues Ticket":"Notiz";
-var button=document.createElement("button");button.type="button";button.className="secondary small";button.textContent="Schritt kopieren";button.addEventListener("click",function(){copy(stepOutput(step,index,inputValues()),button)});
-header.append(title,kind,button);
-var body=document.createElement("div");body.className="preview-body";
-var list=document.createElement("dl");list.className="preview-meta";
-meta(list,"Tickettyp",step.type);meta(list,"Queue",step.queue);meta(list,"Service",step.service);meta(list,"Status",step.state);
-body.appendChild(list);
-var subject=renderText(step.subject,values);
-if(subject){var subjectBox=document.createElement("div");subjectBox.className="preview-subject";subjectBox.textContent=subject;body.appendChild(subjectBox)}
-var text=document.createElement("div");text.className="preview-text";text.textContent=renderText(step.body,values);body.appendChild(text);
-section.append(header,body);preview.appendChild(section)
+function fallbackCopy(text){
+var area=document.createElement("textarea");
+area.value=text;
+area.style.position="fixed";
+area.style.left="-9999px";
+document.body.appendChild(area);
+area.select();
+document.execCommand("copy");
+area.remove();
+}
+function copyText(text,button){
+function complete(){
+var original=button.textContent;
+button.textContent="Kopiert";
+setTimeout(function(){button.textContent=original},1000);
+}
+if(navigator.clipboard&&window.isSecureContext){
+navigator.clipboard.writeText(text).then(complete).catch(function(){fallbackCopy(text);complete()});
+}else{
+fallbackCopy(text);
+complete();
+}
+}
+document.getElementById("copyVariables").addEventListener("click",function(){
+copyText(variableText(),this);
 });
-}
-inputs.forEach(function(input){input.addEventListener("input",render)});
-var copyAll=document.getElementById("copyAll");
-if(copyAll){copyAll.addEventListener("click",function(){var values=inputValues();copy((mask.steps||[]).map(function(step,index){return stepOutput(step,index,values)}).join("\n\n========================================\n\n"),copyAll)})}
-var clear=document.getElementById("clearFields");
-if(clear){clear.addEventListener("click",function(){inputs.forEach(function(input){input.value=""});render()})}
-render();
+document.getElementById("clearVariables").addEventListener("click",function(){
+Object.keys(values).forEach(function(name){values[name]=""});
+renderVariables();
+renderWorkflow();
+});
+document.getElementById("applyVariables").addEventListener("click",function(){
+var text=document.getElementById("variableImport").value;
+text.split(/\r?\n/).forEach(function(line){
+var separator=line.indexOf(":");
+if(separator<1){return}
+var name=line.slice(0,separator).trim();
+var value=line.slice(separator+1).trim();
+if(Object.prototype.hasOwnProperty.call(values,name)){values[name]=value}
+});
+renderVariables();
+renderWorkflow();
+});
+document.getElementById("copyProcess").addEventListener("click",function(){
+copyText(processText(),this);
+});
+collectVariables();
+renderVariables();
+renderWorkflow();
 })();
 </script>
 </body>
