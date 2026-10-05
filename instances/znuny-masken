@@ -1,213 +1,380 @@
 <?php
 declare(strict_types=1);
+
 ini_set('display_errors','0');
 ini_set('log_errors','1');
 error_reporting(E_ALL);
+
 const DATA_FILE=__DIR__.'/masks.json';
 const MAX_POST_SIZE=2097152;
+
 session_name('znuny_masks');
-session_set_cookie_params(['lifetime'=>0,'path'=>'/','secure'=>isset($_SERVER['HTTPS'])&&$_SERVER['HTTPS']!=='off','httponly'=>true,'samesite'=>'Strict']);
+session_set_cookie_params([
+'lifetime'=>0,
+'path'=>'/',
+'secure'=>!empty($_SERVER['HTTPS'])&&$_SERVER['HTTPS']!=='off',
+'httponly'=>true,
+'samesite'=>'Strict'
+]);
 session_start();
+
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: SAMEORIGIN');
 header('Referrer-Policy: same-origin');
-function h($value):string{
+
+function html($value):string{
 return htmlspecialchars((string)$value,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
 }
-function valueText($value,int $limit=20000):string{
-if(!is_string($value)){return '';}
-$value=trim(str_replace("\0",'',$value));
-return function_exists('mb_substr')?mb_substr($value,0,$limit,'UTF-8'):substr($value,0,$limit);
+
+function text($value,int $limit=30000):string{
+if(!is_string($value)){
+return '';
 }
-function createId():string{
-try{return bin2hex(random_bytes(12));}
-catch(Throwable $exception){return str_replace('.','',uniqid('',true));}
+$value=trim(str_replace(chr(0),'',$value));
+if(function_exists('mb_substr')){
+return mb_substr($value,0,$limit,'UTF-8');
 }
-function initialData():array{
-return ['settings'=>['ticketTypes'=>[],'queues'=>[],'services'=>[],'states'=>[]],'masks'=>[]];
+return substr($value,0,$limit);
 }
-function initializeData():void{
-if(is_file(DATA_FILE)){return;}
-$json=json_encode(initialData(),JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+
+function identifier():string{
+try{
+return bin2hex(random_bytes(12));
+}catch(Throwable $exception){
+return str_replace('.','',uniqid('',true));
+}
+}
+
+function emptyData():array{
+return ['masks'=>[]];
+}
+
+function initializeStorage():void{
+if(is_file(DATA_FILE)){
+return;
+}
+$json=json_encode(
+emptyData(),
+JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES
+);
 if($json===false||file_put_contents(DATA_FILE,$json,LOCK_EX)===false){
 http_response_code(500);
 exit('masks.json konnte nicht angelegt werden.');
 }
 @chmod(DATA_FILE,0660);
 }
+
 function loadData():array{
-initializeData();
+initializeStorage();
+
 $handle=@fopen(DATA_FILE,'rb');
-if($handle===false){http_response_code(500);exit('masks.json konnte nicht geöffnet werden.');}
-if(!flock($handle,LOCK_SH)){fclose($handle);http_response_code(500);exit('masks.json konnte nicht gesperrt werden.');}
+if($handle===false){
+http_response_code(500);
+exit('masks.json konnte nicht geöffnet werden.');
+}
+
+if(!flock($handle,LOCK_SH)){
+fclose($handle);
+http_response_code(500);
+exit('masks.json konnte nicht gesperrt werden.');
+}
+
 $json=stream_get_contents($handle);
 flock($handle,LOCK_UN);
 fclose($handle);
+
 $data=json_decode((string)$json,true);
-if(json_last_error()!==JSON_ERROR_NONE||!is_array($data)){http_response_code(500);exit('masks.json enthält ungültiges JSON.');}
-if(!isset($data['settings'])||!is_array($data['settings'])){$data['settings']=[];}
-foreach(['ticketTypes','queues','services','states'] as $key){
-if(!isset($data['settings'][$key])||!is_array($data['settings'][$key])){$data['settings'][$key]=[];}
+if(json_last_error()!==JSON_ERROR_NONE||!is_array($data)){
+http_response_code(500);
+exit('masks.json enthält ungültiges JSON.');
 }
-if(!isset($data['masks'])||!is_array($data['masks'])){$data['masks']=[];}
+
+if(!isset($data['masks'])||!is_array($data['masks'])){
+$data['masks']=[];
+}
+
 return $data;
 }
+
 function saveData(array $data):void{
-$json=json_encode($data,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
-if($json===false){throw new RuntimeException('JSON konnte nicht erzeugt werden.');}
-$temp=DATA_FILE.'.tmp.'.createId();
-$handle=@fopen($temp,'xb');
-if($handle===false){throw new RuntimeException('Temporäre Datei konnte nicht erstellt werden.');}
-if(!flock($handle,LOCK_EX)){fclose($handle);@unlink($temp);throw new RuntimeException('Datei konnte nicht gesperrt werden.');}
+$json=json_encode(
+$data,
+JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES
+);
+if($json===false){
+throw new RuntimeException('JSON konnte nicht erzeugt werden.');
+}
+
+$handle=@fopen(DATA_FILE,'c+b');
+if($handle===false){
+throw new RuntimeException('masks.json ist nicht beschreibbar.');
+}
+
+if(!flock($handle,LOCK_EX)){
+fclose($handle);
+throw new RuntimeException('masks.json konnte nicht gesperrt werden.');
+}
+
+$success=ftruncate($handle,0);
+if($success){
+$success=rewind($handle);
+}
+if($success){
 $length=strlen($json);
 $written=0;
-$success=true;
 while($written<$length){
 $result=fwrite($handle,substr($json,$written));
-if($result===false||$result===0){$success=false;break;}
+if($result===false||$result===0){
+$success=false;
+break;
+}
 $written+=$result;
 }
-$success=$success&&fflush($handle);
+}
+if($success){
+$success=fflush($handle);
+}
+
 flock($handle,LOCK_UN);
 fclose($handle);
-if(!$success){@unlink($temp);throw new RuntimeException('masks.json konnte nicht geschrieben werden.');}
-@chmod($temp,0660);
-if(!@rename($temp,DATA_FILE)){@unlink($temp);throw new RuntimeException('masks.json konnte nicht ersetzt werden.');}
+
+if(!$success){
+throw new RuntimeException('masks.json konnte nicht gespeichert werden.');
 }
+}
+
 function csrfToken():string{
-if(!isset($_SESSION['csrf'])||!is_string($_SESSION['csrf'])){
-try{$_SESSION['csrf']=bin2hex(random_bytes(32));}
-catch(Throwable $exception){$_SESSION['csrf']=hash('sha256',uniqid('',true));}
+if(empty($_SESSION['csrf'])||!is_string($_SESSION['csrf'])){
+try{
+$_SESSION['csrf']=bin2hex(random_bytes(32));
+}catch(Throwable $exception){
+$_SESSION['csrf']=hash('sha256',uniqid('',true));
+}
 }
 return $_SESSION['csrf'];
 }
+
 function verifyCsrf():void{
-$token=isset($_POST['csrf'])&&is_string($_POST['csrf'])?$_POST['csrf']:'';
-if(!hash_equals(csrfToken(),$token)){http_response_code(403);exit('Ungültige Anfrage.');}
+$token=isset($_POST['csrf'])&&is_string($_POST['csrf'])
+?$_POST['csrf']
+:'';
+if(!hash_equals(csrfToken(),$token)){
+http_response_code(403);
+exit('Ungültige Anfrage.');
 }
-function textList($value):array{
-if(!is_string($value)){return [];}
-$lines=preg_split('/\R/u',$value);
-$result=[];
-foreach(is_array($lines)?$lines:[] as $line){
-$item=valueText($line,120);
-if($item!==''&&!in_array($item,$result,true)){$result[]=$item;}
 }
-return $result;
-}
+
 function postArray(string $name):array{
-return isset($_POST[$name])&&is_array($_POST[$name])?$_POST[$name]:[];
+if(isset($_POST[$name])&&is_array($_POST[$name])){
+return $_POST[$name];
 }
+return [];
+}
+
 function findMask(array $data,string $id):?array{
 foreach($data['masks'] as $mask){
-if(is_array($mask)&&(string)($mask['id']??'')===$id){return $mask;}
+if(is_array($mask)&&(string)($mask['id']??'')===$id){
+return $mask;
+}
 }
 return null;
 }
+
+function normalizeMask(array $mask):array{
+if(!isset($mask['fields'])||!is_array($mask['fields'])){
+$mask['fields']=[];
+}
+if(!isset($mask['steps'])||!is_array($mask['steps'])){
+$mask['steps']=[];
+}
+return $mask;
+}
+
 function maskFromPost():array{
-$name=valueText($_POST['name']??'',120);
-if($name===''){throw new RuntimeException('Der Maskenname fehlt.');}
-$ids=postArray('step_id');
-$names=postArray('step_name');
-$actions=postArray('step_action');
-$types=postArray('step_type');
-$queues=postArray('step_queue');
-$services=postArray('step_service');
-$states=postArray('step_state');
-$subjects=postArray('step_subject');
-$bodies=postArray('step_body');
-$count=count($actions);
-if($count<1){throw new RuntimeException('Mindestens ein Prozessschritt ist erforderlich.');}
-if($count>100){throw new RuntimeException('Maximal 100 Prozessschritte sind erlaubt.');}
-$steps=[];
-for($index=0;$index<$count;$index++){
-$action=valueText($actions[$index]??'',20);
-if(!in_array($action,['ticket','note'],true)){$action='note';}
-$stepName=valueText($names[$index]??'',120);
-if($stepName===''){throw new RuntimeException('Jeder Prozessschritt benötigt einen Namen.');}
-$stepId=valueText($ids[$index]??'',64);
-$steps[]=[
-'id'=>$stepId!==''?$stepId:createId(),
-'action'=>$action,
-'name'=>$stepName,
-'type'=>valueText($types[$index]??'',120),
-'queue'=>valueText($queues[$index]??'',120),
-'service'=>valueText($services[$index]??'',120),
-'state'=>valueText($states[$index]??'',120),
-'subject'=>valueText($subjects[$index]??'',500),
-'body'=>valueText($bodies[$index]??'',20000)
+$name=text($_POST['name']??'',120);
+if($name===''){
+throw new RuntimeException('Der Maskenname fehlt.');
+}
+
+$fieldIds=postArray('field_id');
+$fieldLabels=postArray('field_label');
+$fieldValues=postArray('field_value');
+$fields=[];
+$fieldCount=max(count($fieldLabels),count($fieldValues));
+
+for($index=0;$index<$fieldCount;$index++){
+$label=text($fieldLabels[$index]??'',120);
+$value=text($fieldValues[$index]??'',3000);
+
+if($label===''&&$value===''){
+continue;
+}
+if($label===''){
+throw new RuntimeException('Jedes gemeinsame Feld benötigt eine Bezeichnung.');
+}
+
+$fieldId=text($fieldIds[$index]??'',64);
+if($fieldId===''){
+$fieldId=identifier();
+}
+
+$fields[]=[
+'id'=>$fieldId,
+'label'=>$label,
+'value'=>$value
 ];
 }
-$id=valueText($_POST['mask_id']??'',64);
-return ['id'=>$id!==''?$id:createId(),'name'=>$name,'description'=>valueText($_POST['description']??'',2000),'published'=>isset($_POST['published']),'updatedAt'=>gmdate('c'),'steps'=>$steps];
+
+$stepIds=postArray('step_id');
+$stepNames=postArray('step_name');
+$stepOperations=postArray('step_operation');
+$stepSubjects=postArray('step_subject');
+$stepBodies=postArray('step_body');
+
+$stepCount=max(
+count($stepNames),
+count($stepOperations),
+count($stepSubjects),
+count($stepBodies)
+);
+
+if($stepCount<1){
+throw new RuntimeException('Mindestens ein Prozessschritt ist erforderlich.');
 }
-function selectOptions(array $values,string $selected):void{
-echo '<option value="">Keine Auswahl</option>';
-foreach($values as $value){
-$value=(string)$value;
-echo '<option value="'.h($value).'"'.($value===$selected?' selected':'').'>'.h($value).'</option>';
+if($stepCount>100){
+throw new RuntimeException('Maximal 100 Prozessschritte sind erlaubt.');
 }
+
+$steps=[];
+
+for($index=0;$index<$stepCount;$index++){
+$stepName=text($stepNames[$index]??'',120);
+if($stepName===''){
+throw new RuntimeException('Jeder Prozessschritt benötigt eine Bezeichnung.');
 }
-if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'&&(int)($_SERVER['CONTENT_LENGTH']??0)>MAX_POST_SIZE){
+
+$stepId=text($stepIds[$index]??'',64);
+if($stepId===''){
+$stepId=identifier();
+}
+
+$steps[]=[
+'id'=>$stepId,
+'name'=>$stepName,
+'operation'=>text($stepOperations[$index]??'',120),
+'subject'=>text($stepSubjects[$index]??'',1000),
+'body'=>text($stepBodies[$index]??'',30000)
+];
+}
+
+$maskId=text($_POST['mask_id']??'',64);
+if($maskId===''){
+$maskId=identifier();
+}
+
+return [
+'id'=>$maskId,
+'name'=>$name,
+'description'=>text($_POST['description']??'',3000),
+'published'=>isset($_POST['published']),
+'fields'=>$fields,
+'steps'=>$steps,
+'updatedAt'=>gmdate('c')
+];
+}
+
+if(
+($_SERVER['REQUEST_METHOD']??'GET')==='POST'&&
+(int)($_SERVER['CONTENT_LENGTH']??0)>MAX_POST_SIZE
+){
 http_response_code(413);
 exit('Die Anfrage ist zu groß.');
 }
+
 $data=loadData();
-$page=valueText($_GET['_page']??'',30);
-$editId=valueText($_GET['_edit']??'',64);
-$maskId=valueText($_GET['_mask']??'',64);
-$tab=($_GET['_tab']??'')==='settings'?'settings':'masks';
+$page=text($_GET['_page']??'',30);
+$editId=text($_GET['_edit']??'',64);
+$maskId=text($_GET['_mask']??'',64);
 $message='';
 $error='';
+
 if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
 try{
 verifyCsrf();
-$action=valueText($_POST['action']??'',30);
-if($action==='save_settings'){
-$data['settings']=[
-'ticketTypes'=>textList($_POST['ticketTypes']??''),
-'queues'=>textList($_POST['queues']??''),
-'services'=>textList($_POST['services']??''),
-'states'=>textList($_POST['states']??'')
-];
-saveData($data);
-header('Location: ?_page=edit&_tab=settings&_result=settings');
-exit;
-}
+$action=text($_POST['action']??'',30);
+
 if($action==='save_mask'){
 $mask=maskFromPost();
 $updated=false;
-foreach($data['masks'] as $index=>$stored){
-if(is_array($stored)&&(string)($stored['id']??'')===$mask['id']){
+
+foreach($data['masks'] as $index=>$storedMask){
+if(
+is_array($storedMask)&&
+(string)($storedMask['id']??'')===$mask['id']
+){
 $data['masks'][$index]=$mask;
 $updated=true;
 break;
 }
 }
-if(!$updated){$data['masks'][]=$mask;}
+
+if(!$updated){
+$data['masks'][]=$mask;
+}
+
 saveData($data);
-header('Location: ?_page=edit&_edit='.rawurlencode($mask['id']).'&_result=mask');
+header('Location: ?_page=edit&_result=saved');
 exit;
 }
+
 if($action==='delete_mask'){
-$id=valueText($_POST['mask_id']??'',64);
-$data['masks']=array_values(array_filter($data['masks'],static function($mask)use($id){
-return !is_array($mask)||(string)($mask['id']??'')!==$id;
-}));
+$deleteId=text($_POST['mask_id']??'',64);
+$newMasks=[];
+
+foreach($data['masks'] as $storedMask){
+if(
+is_array($storedMask)&&
+(string)($storedMask['id']??'')===$deleteId
+){
+continue;
+}
+$newMasks[]=$storedMask;
+}
+
+$data['masks']=$newMasks;
 saveData($data);
 header('Location: ?_page=edit&_result=deleted');
 exit;
 }
+
 throw new RuntimeException('Unbekannte Aktion.');
 }catch(Throwable $exception){
 $error=$exception->getMessage();
 }
 }
-if(($_GET['_result']??'')==='settings'){$message='Feste Werte gespeichert.';}
-if(($_GET['_result']??'')==='mask'){$message='Maske gespeichert.';}
-if(($_GET['_result']??'')==='deleted'){$message='Maske gelöscht.';}
-$editedMask=$editId!==''&&$editId!=='new'?findMask($data,$editId):null;
-$selectedMask=$maskId!==''?findMask($data,$maskId):null;
+
+if(($_GET['_result']??'')==='saved'){
+$message='Maske gespeichert.';
+}
+if(($_GET['_result']??'')==='deleted'){
+$message='Maske gelöscht.';
+}
+
+$editedMask=null;
+if($editId!==''&&$editId!=='new'){
+$editedMask=findMask($data,$editId);
+if($editedMask!==null){
+$editedMask=normalizeMask($editedMask);
+}
+}
+
+$selectedMask=null;
+if($maskId!==''){
+$selectedMask=findMask($data,$maskId);
+if($selectedMask!==null){
+$selectedMask=normalizeMask($selectedMask);
+}
+}
 ?>
 <!doctype html>
 <html lang="de">
@@ -217,11 +384,11 @@ $selectedMask=$maskId!==''?findMask($data,$maskId):null;
 <meta name="color-scheme" content="light dark">
 <title>Znuny-Prozesse</title>
 <style>
-:root{--bg:#fff;--fg:#171717;--muted:#60656d;--border:#d5d8de;--panel:#f5f6f8;--panel2:#e9ebef;--accent:#0a63ff;--accentfg:#fff;--danger:#b3261e;--dangerbg:#fde7e7;--success:#1a7f37;--successbg:#e6f4ea;--shadow:rgba(0,0,0,.18);--field:#fff8d8;--fieldborder:#b48b00}
-@media(prefers-color-scheme:dark){:root{--bg:#101214;--fg:#e8e8ea;--muted:#a6adb6;--border:#2c3138;--panel:#181b1f;--panel2:#22262c;--accent:#6ca5ff;--accentfg:#07101f;--danger:#ff7777;--dangerbg:#3f1d1d;--success:#5bd47e;--successbg:#163a22;--shadow:rgba(0,0,0,.6);--field:#3d3514;--fieldborder:#d5ae2c}}
+:root{--bg:#fff;--fg:#181818;--muted:#626870;--border:#d5d8dd;--panel:#f4f5f7;--panel2:#e8eaee;--accent:#075fcf;--accentfg:#fff;--danger:#b3261e;--success:#18763a;--successbg:#e8f5eb;--errorbg:#fdeaea;--variable:#fff4bd;--variableborder:#8b6b00;--shadow:rgba(0,0,0,.2)}
+@media(prefers-color-scheme:dark){:root{--bg:#111315;--fg:#e8e8e8;--muted:#aab0b8;--border:#30353c;--panel:#191c20;--panel2:#23272d;--accent:#6ca8ff;--accentfg:#08101b;--danger:#ff7777;--success:#62d683;--successbg:#173c24;--errorbg:#3e2020;--variable:#3d3411;--variableborder:#d7ad27;--shadow:rgba(0,0,0,.6)}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:14px Arial,Helvetica,sans-serif}
-main{max-width:1260px;margin:0 auto;padding:72px 20px 30px}
+main{max-width:1280px;margin:0 auto;padding:72px 20px 32px}
 h1{margin:0 0 18px;font-size:22px}
 h2{margin:0 0 14px;font-size:17px}
 h3{margin:0;font-size:15px}
@@ -239,56 +406,45 @@ form{margin:0}
 .actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .notice,.error{margin-bottom:14px;padding:10px;border-radius:3px}
 .notice{border:1px solid var(--success);background:var(--successbg)}
-.error{border:1px solid var(--danger);background:var(--dangerbg)}
+.error{border:1px solid var(--danger);background:var(--errorbg)}
 .muted{color:var(--muted);font-size:12px}
-.hidden{display:none!important}
-.tabs{display:flex;gap:8px;margin-bottom:14px}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
 .card{display:flex;flex-direction:column;gap:10px;padding:14px;border:1px solid var(--border);border-radius:4px;background:var(--panel)}
 .card p{margin:0;color:var(--muted);line-height:1.45}
 .card .actions{margin-top:auto}
 .empty{padding:28px;border:1px dashed var(--border);color:var(--muted);text-align:center}
-.editor-step{margin-bottom:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg)}
-.editor-step-header{display:flex;align-items:center;gap:8px;padding:10px;border-bottom:1px solid var(--border);background:var(--panel2)}
-.editor-step-header span{color:var(--muted);font-size:12px}
-.editor-step-controls{display:flex;gap:5px;margin-left:auto}
-.editor-step-body{padding:12px}
-.menu-button{position:fixed;top:10px;left:10px;z-index:1001;padding:10px 14px;border:0;background:#171717;color:#fff;font-size:20px}
+.menu-button{position:fixed;top:10px;left:10px;z-index:1001;padding:10px 14px;border:0;background:#181818;color:#fff;font-size:20px}
 .menu-overlay{position:fixed;inset:0;display:none;z-index:1000}
 .menu-overlay.visible{display:block}
 .menu-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.55)}
-.menu-panel{position:absolute;top:0;left:0;width:260px;height:100%;padding:20px;background:var(--panel);box-shadow:2px 0 10px var(--shadow);transform:translateX(-100%);transition:transform .2s ease-out}
-.menu-overlay.visible .menu-panel{transform:translateX(0)}
+.menu-panel{position:absolute;top:0;left:0;width:260px;height:100%;padding:20px;background:var(--panel);box-shadow:2px 0 10px var(--shadow)}
 .menu-close{display:block;margin-left:auto;padding:0;border:0;background:transparent;color:var(--fg);font-size:28px}
 .menu-title{margin:12px 0 20px;font-size:17px;font-weight:bold}
 .menu-nav{display:flex;flex-direction:column;gap:8px}
 .menu-nav button{width:100%;border-color:var(--border);background:transparent;color:var(--fg);text-align:left}
-.menu-nav button:hover{background:var(--panel2)}
-.workspace{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:16px;align-items:start}
-.workflow{min-width:0}
+.editor-item{margin-bottom:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg)}
+.item-header{display:flex;align-items:center;gap:8px;padding:9px 10px;border-bottom:1px solid var(--border);background:var(--panel2)}
+.item-controls{display:flex;gap:5px;margin-left:auto}
+.item-body{padding:12px}
+.workspace{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:18px;align-items:start}
 .variable-panel{position:sticky;top:18px}
-.variable-list{display:flex;flex-direction:column;gap:10px}
-.variable-row{display:grid;grid-template-columns:1fr auto;gap:6px}
-.variable-row label{grid-column:1/-1;margin:0}
-.variable-row textarea{min-height:58px}
-.import-box{min-height:110px}
-.ticket{margin-bottom:18px;border:1px solid var(--border);border-radius:4px;background:var(--bg);overflow:hidden}
+.variable-text{min-height:360px;font:13px/1.5 Consolas,monospace}
+.ticket{margin-bottom:16px;border:1px solid var(--border);border-radius:4px;background:var(--bg);overflow:hidden}
 .ticket-header{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--border);background:var(--panel2)}
 .ticket-number{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:var(--accent);color:var(--accentfg);font-weight:bold}
-.ticket-kind{margin-left:auto;color:var(--muted);font-size:12px}
-.ticket-fields{display:grid;grid-template-columns:150px minmax(0,1fr)}
+.ticket-operation{margin-left:auto;color:var(--muted);font-size:12px}
+.ticket-fields{display:grid;grid-template-columns:170px minmax(0,1fr)}
 .ticket-label,.ticket-value{padding:8px 10px;border-bottom:1px solid var(--border)}
 .ticket-label{background:var(--panel);color:var(--muted);font-weight:bold}
-.ticket-value{min-width:0}
 .ticket-content{padding:14px}
-.ticket-subject{margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border);font-weight:bold;line-height:1.6}
+.ticket-subject{margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border);font-weight:bold;line-height:1.65}
 .ticket-text{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.65}
-.editable-variable{display:inline-block;min-width:52px;padding:1px 4px;border:1px dashed var(--fieldborder);border-radius:2px;background:var(--field);color:var(--fg);cursor:text;white-space:pre-wrap;vertical-align:baseline}
-.editable-variable:focus{outline:2px solid var(--accent);outline-offset:1px}
-.process-arrow{display:flex;align-items:center;justify-content:center;height:26px;color:var(--muted);font-size:18px}
+.variable{display:inline-block;min-width:42px;padding:1px 5px;border:1px dashed var(--variableborder);border-radius:2px;background:var(--variable);color:var(--fg);font:inherit;font-weight:normal;cursor:pointer;vertical-align:baseline}
+.variable:hover,.variable.active{outline:2px solid var(--accent);outline-offset:1px}
+.process-arrow{height:28px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:18px}
 code{padding:2px 4px;background:var(--panel2);border-radius:2px}
-@media(max-width:900px){.workspace{grid-template-columns:1fr}.variable-panel{position:static}}
-@media(max-width:700px){main{padding:68px 12px 24px}.grid{grid-template-columns:1fr}.full{grid-column:auto}.ticket-fields{grid-template-columns:1fr}.ticket-label{border-bottom:0;padding-bottom:2px}.ticket-value{padding-top:2px}.menu-panel{width:min(260px,85vw)}}
+@media(max-width:920px){.workspace{grid-template-columns:1fr}.variable-panel{position:static}}
+@media(max-width:700px){main{padding:68px 12px 24px}.grid{grid-template-columns:1fr}.full{grid-column:auto}.ticket-fields{grid-template-columns:1fr}.ticket-label{padding-bottom:2px;border-bottom:0}.ticket-value{padding-top:2px}.menu-panel{width:min(260px,85vw)}}
 </style>
 </head>
 <body>
@@ -299,57 +455,43 @@ code{padding:2px 4px;background:var(--panel2);border-radius:2px}
 <button type="button" class="menu-close" id="menuClose" aria-label="Menü schließen">×</button>
 <div class="menu-title">Znuny-Prozesse</div>
 <div class="menu-nav">
-<button type="button" data-go="./">Masken</button>
-<button type="button" data-go="?_page=edit">Verwaltung</button>
+<button type="button" data-location="./">Masken</button>
+<button type="button" data-location="?_page=edit">Verwaltung</button>
 </div>
 </div>
 </div>
 <main>
 <?php if($message!==''): ?>
-<div class="notice"><?=h($message)?></div>
+<div class="notice"><?=html($message)?></div>
 <?php endif; ?>
 <?php if($error!==''): ?>
-<div class="error"><?=h($error)?></div>
+<div class="error"><?=html($error)?></div>
 <?php endif; ?>
+
 <?php if($page==='edit'): ?>
-<h1>Maskenverwaltung</h1>
-<div class="tabs">
-<button type="button" class="secondary" data-tab-button="masks">Masken</button>
-<button type="button" class="secondary" data-tab-button="settings">Feste Werte</button>
-</div>
-<section data-tab="settings" class="<?=$tab==='settings'?'':'hidden'?>">
-<form method="post" class="panel">
-<input type="hidden" name="csrf" value="<?=h(csrfToken())?>">
-<input type="hidden" name="action" value="save_settings">
-<h2>Feste Werte</h2>
-<div class="grid">
-<div><label for="ticketTypes">Tickettypen</label><textarea id="ticketTypes" name="ticketTypes" placeholder="Ein Wert pro Zeile"><?=h(implode("\n",$data['settings']['ticketTypes']))?></textarea></div>
-<div><label for="queues">Queues</label><textarea id="queues" name="queues" placeholder="Ein Wert pro Zeile"><?=h(implode("\n",$data['settings']['queues']))?></textarea></div>
-<div><label for="services">Services</label><textarea id="services" name="services" placeholder="Ein Wert pro Zeile"><?=h(implode("\n",$data['settings']['services']))?></textarea></div>
-<div><label for="states">Statuswerte</label><textarea id="states" name="states" placeholder="Ein Wert pro Zeile"><?=h(implode("\n",$data['settings']['states']))?></textarea></div>
-</div>
-<div class="actions" style="margin-top:12px"><button type="submit">Speichern</button></div>
-</form>
-</section>
-<section data-tab="masks" class="<?=$tab==='masks'?'':'hidden'?>">
+
 <?php if($editId===''): ?>
+<h1>Maskenverwaltung</h1>
 <div class="actions" style="margin-bottom:14px">
-<button type="button" data-go="?_page=edit&amp;_edit=new">Neue Maske</button>
+<button type="button" data-location="?_page=edit&amp;_edit=new">Neue Maske</button>
 </div>
 <div class="cards">
 <?php foreach($data['masks'] as $mask): ?>
 <?php if(!is_array($mask)){continue;} ?>
 <div class="card">
-<h3><?=h($mask['name']??'')?></h3>
-<p><?=nl2br(h($mask['description']??''))?></p>
-<div class="muted"><?=count(is_array($mask['steps']??null)?$mask['steps']:[])?> Schritte · <?=!empty($mask['published'])?'Veröffentlicht':'Verborgen'?></div>
+<h3><?=html($mask['name']??'')?></h3>
+<p><?=nl2br(html($mask['description']??''))?></p>
+<div class="muted">
+<?=count(is_array($mask['steps']??null)?$mask['steps']:[])?> Prozessschritte ·
+<?=!empty($mask['published'])?'Veröffentlicht':'Verborgen'?>
+</div>
 <div class="actions">
-<button type="button" class="secondary small" data-go="?_page=edit&amp;_edit=<?=rawurlencode((string)($mask['id']??''))?>">Bearbeiten</button>
-<button type="button" class="secondary small" data-go="?_mask=<?=rawurlencode((string)($mask['id']??''))?>">Öffnen</button>
+<button type="button" class="secondary small" data-location="?_page=edit&amp;_edit=<?=rawurlencode((string)($mask['id']??''))?>">Bearbeiten</button>
+<button type="button" class="secondary small" data-location="?_mask=<?=rawurlencode((string)($mask['id']??''))?>">Öffnen</button>
 <form method="post" onsubmit="return confirm('Maske wirklich löschen?')">
-<input type="hidden" name="csrf" value="<?=h(csrfToken())?>">
+<input type="hidden" name="csrf" value="<?=html(csrfToken())?>">
 <input type="hidden" name="action" value="delete_mask">
-<input type="hidden" name="mask_id" value="<?=h($mask['id']??'')?>">
+<input type="hidden" name="mask_id" value="<?=html($mask['id']??'')?>">
 <button type="submit" class="danger small">Löschen</button>
 </form>
 </div>
@@ -359,59 +501,131 @@ code{padding:2px 4px;background:var(--panel2);border-radius:2px}
 <div class="empty">Keine Masken vorhanden.</div>
 <?php endif; ?>
 </div>
+
 <?php else: ?>
+
 <?php
 $formMask=$editedMask??[
 'id'=>'',
 'name'=>'',
 'description'=>'',
 'published'=>true,
+'fields'=>[],
 'steps'=>[
-['id'=>'','action'=>'ticket','name'=>'Ticket erstellen','type'=>'','queue'=>'','service'=>'','state'=>'','subject'=>'','body'=>'']
+[
+'id'=>'',
+'name'=>'Erster Schritt',
+'operation'=>'',
+'subject'=>'',
+'body'=>''
+]
 ]
 ];
 ?>
+
+<h1><?=html($formMask['id']!==''?'Maske bearbeiten':'Neue Maske')?></h1>
 <form method="post">
-<input type="hidden" name="csrf" value="<?=h(csrfToken())?>">
+<input type="hidden" name="csrf" value="<?=html(csrfToken())?>">
 <input type="hidden" name="action" value="save_mask">
-<input type="hidden" name="mask_id" value="<?=h($formMask['id']??'')?>">
+<input type="hidden" name="mask_id" value="<?=html($formMask['id']??'')?>">
+
 <div class="panel">
-<h2>Maske</h2>
+<h2>Grunddaten</h2>
 <div class="grid">
-<div><label for="name">Name</label><input id="name" name="name" maxlength="120" required value="<?=h($formMask['name']??'')?>"></div>
-<div><label>Veröffentlichung</label><label style="font-size:14px;color:var(--fg);font-weight:normal"><input type="checkbox" name="published" style="width:auto" <?=!empty($formMask['published'])?'checked':''?>> Auf der Startseite anzeigen</label></div>
-<div class="full"><label for="description">Beschreibung</label><textarea id="description" name="description" maxlength="2000"><?=h($formMask['description']??'')?></textarea></div>
+<div>
+<label for="name">Name</label>
+<input id="name" name="name" maxlength="120" required value="<?=html($formMask['name']??'')?>">
+</div>
+<div>
+<label>Veröffentlichung</label>
+<label style="font-size:14px;color:var(--fg);font-weight:normal">
+<input type="checkbox" name="published" style="width:auto" <?=!empty($formMask['published'])?'checked':''?>>
+Auf der Startseite anzeigen
+</label>
+</div>
+<div class="full">
+<label for="description">Beschreibung</label>
+<textarea id="description" name="description" maxlength="3000"><?=html($formMask['description']??'')?></textarea>
 </div>
 </div>
+</div>
+
 <div class="panel">
 <div class="actions" style="justify-content:space-between;margin-bottom:12px">
+<div>
+<h2>Gemeinsame Ticketfelder</h2>
+<div class="muted">Diese Felder werden einmal festgelegt und in jedem Prozessschritt angezeigt.</div>
+</div>
+<button type="button" id="addField">Feld hinzufügen</button>
+</div>
+<div id="fields">
+<?php foreach($formMask['fields'] as $field): ?>
+<div class="editor-item">
+<div class="item-header">
+<strong data-field-title><?=html($field['label']??'Feld')?></strong>
+<div class="item-controls">
+<button type="button" class="secondary small" data-up>↑</button>
+<button type="button" class="secondary small" data-down>↓</button>
+<button type="button" class="danger small" data-remove>Entfernen</button>
+</div>
+</div>
+<div class="item-body">
+<input type="hidden" name="field_id[]" value="<?=html($field['id']??'')?>">
+<div class="grid">
+<div>
+<label>Bezeichnung</label>
+<input name="field_label[]" maxlength="120" required data-field-label value="<?=html($field['label']??'')?>">
+</div>
+<div class="full">
+<label>Wert oder Vorlage</label>
+<textarea name="field_value[]" maxlength="3000"><?=html($field['value']??'')?></textarea>
+</div>
+</div>
+</div>
+</div>
+<?php endforeach; ?>
+</div>
+</div>
+
+<div class="panel">
+<div class="actions" style="justify-content:space-between;margin-bottom:12px">
+<div>
 <h2>Prozessschritte</h2>
+<div class="muted">Variablen werden als <code>{{Name}}</code> geschrieben.</div>
+</div>
 <button type="button" id="addStep">Schritt hinzufügen</button>
 </div>
-<div class="muted" style="margin-bottom:12px">Variablen werden als <code>{{Name}}</code> geschrieben. Derselbe Variablenname wird später überall gemeinsam bearbeitet.</div>
 <div id="steps">
 <?php foreach($formMask['steps'] as $step): ?>
-<div class="editor-step">
-<div class="editor-step-header">
-<strong data-step-title><?=h($step['name']??'Schritt')?></strong>
-<span data-step-kind><?=($step['action']??'note')==='ticket'?'Ticket':'Notiz'?></span>
-<div class="editor-step-controls">
-<button type="button" class="secondary small" data-move-up>↑</button>
-<button type="button" class="secondary small" data-move-down>↓</button>
-<button type="button" class="danger small" data-remove-step>Entfernen</button>
+<div class="editor-item">
+<div class="item-header">
+<strong data-step-title><?=html($step['name']??'Schritt')?></strong>
+<span class="muted" data-operation-title><?=html($step['operation']??'')?></span>
+<div class="item-controls">
+<button type="button" class="secondary small" data-up>↑</button>
+<button type="button" class="secondary small" data-down>↓</button>
+<button type="button" class="danger small" data-remove>Entfernen</button>
 </div>
 </div>
-<div class="editor-step-body">
-<input type="hidden" name="step_id[]" value="<?=h($step['id']??'')?>">
+<div class="item-body">
+<input type="hidden" name="step_id[]" value="<?=html($step['id']??'')?>">
 <div class="grid">
-<div><label>Bezeichnung</label><input name="step_name[]" maxlength="120" required data-step-name value="<?=h($step['name']??'')?>"></div>
-<div><label>Schrittart</label><select name="step_action[]" data-step-action><option value="ticket" <?=($step['action']??'')==='ticket'?'selected':''?>>Ticket erstellen</option><option value="note" <?=($step['action']??'')==='note'?'selected':''?>>Notiz hinzufügen</option></select></div>
-<div><label>Tickettyp</label><select name="step_type[]"><?php selectOptions($data['settings']['ticketTypes'],(string)($step['type']??'')); ?></select></div>
-<div><label>Queue</label><select name="step_queue[]"><?php selectOptions($data['settings']['queues'],(string)($step['queue']??'')); ?></select></div>
-<div><label>Service</label><select name="step_service[]"><?php selectOptions($data['settings']['services'],(string)($step['service']??'')); ?></select></div>
-<div><label>Status</label><select name="step_state[]"><?php selectOptions($data['settings']['states'],(string)($step['state']??'')); ?></select></div>
-<div class="full"><label>Betreff</label><input name="step_subject[]" maxlength="500" value="<?=h($step['subject']??'')?>"></div>
-<div class="full"><label>Text</label><textarea name="step_body[]" maxlength="20000"><?=h($step['body']??'')?></textarea></div>
+<div>
+<label>Bezeichnung</label>
+<input name="step_name[]" maxlength="120" required data-step-name value="<?=html($step['name']??'')?>">
+</div>
+<div>
+<label>Prozessart</label>
+<input name="step_operation[]" maxlength="120" data-operation-input value="<?=html($step['operation']??'')?>">
+</div>
+<div class="full">
+<label>Betreff</label>
+<input name="step_subject[]" maxlength="1000" value="<?=html($step['subject']??'')?>">
+</div>
+<div class="full">
+<label>Text</label>
+<textarea name="step_body[]" maxlength="30000"><?=html($step['body']??'')?></textarea>
+</div>
 </div>
 </div>
 </div>
@@ -419,59 +633,91 @@ $formMask=$editedMask??[
 </div>
 <div class="actions">
 <button type="submit">Maske speichern</button>
-<button type="button" class="secondary" data-go="?_page=edit">Abbrechen</button>
+<button type="button" class="secondary" data-location="?_page=edit">Abbrechen</button>
 </div>
 </div>
 </form>
-<template id="stepTemplate">
-<div class="editor-step">
-<div class="editor-step-header">
-<strong data-step-title>Neuer Schritt</strong>
-<span data-step-kind>Notiz</span>
-<div class="editor-step-controls">
-<button type="button" class="secondary small" data-move-up>↑</button>
-<button type="button" class="secondary small" data-move-down>↓</button>
-<button type="button" class="danger small" data-remove-step>Entfernen</button>
+
+<template id="fieldTemplate">
+<div class="editor-item">
+<div class="item-header">
+<strong data-field-title>Neues Feld</strong>
+<div class="item-controls">
+<button type="button" class="secondary small" data-up>↑</button>
+<button type="button" class="secondary small" data-down>↓</button>
+<button type="button" class="danger small" data-remove>Entfernen</button>
 </div>
 </div>
-<div class="editor-step-body">
-<input type="hidden" name="step_id[]" value="">
+<div class="item-body">
+<input type="hidden" name="field_id[]" value="">
 <div class="grid">
-<div><label>Bezeichnung</label><input name="step_name[]" maxlength="120" required data-step-name value="Neuer Schritt"></div>
-<div><label>Schrittart</label><select name="step_action[]" data-step-action><option value="ticket">Ticket erstellen</option><option value="note" selected>Notiz hinzufügen</option></select></div>
-<div><label>Tickettyp</label><select name="step_type[]"><?php selectOptions($data['settings']['ticketTypes'],''); ?></select></div>
-<div><label>Queue</label><select name="step_queue[]"><?php selectOptions($data['settings']['queues'],''); ?></select></div>
-<div><label>Service</label><select name="step_service[]"><?php selectOptions($data['settings']['services'],''); ?></select></div>
-<div><label>Status</label><select name="step_state[]"><?php selectOptions($data['settings']['states'],''); ?></select></div>
-<div class="full"><label>Betreff</label><input name="step_subject[]" maxlength="500"></div>
-<div class="full"><label>Text</label><textarea name="step_body[]" maxlength="20000"></textarea></div>
+<div>
+<label>Bezeichnung</label>
+<input name="field_label[]" maxlength="120" required data-field-label value="Neues Feld">
+</div>
+<div class="full">
+<label>Wert oder Vorlage</label>
+<textarea name="field_value[]" maxlength="3000"></textarea>
+</div>
 </div>
 </div>
 </div>
 </template>
+
+<template id="stepTemplate">
+<div class="editor-item">
+<div class="item-header">
+<strong data-step-title>Neuer Schritt</strong>
+<span class="muted" data-operation-title></span>
+<div class="item-controls">
+<button type="button" class="secondary small" data-up>↑</button>
+<button type="button" class="secondary small" data-down>↓</button>
+<button type="button" class="danger small" data-remove>Entfernen</button>
+</div>
+</div>
+<div class="item-body">
+<input type="hidden" name="step_id[]" value="">
+<div class="grid">
+<div>
+<label>Bezeichnung</label>
+<input name="step_name[]" maxlength="120" required data-step-name value="Neuer Schritt">
+</div>
+<div>
+<label>Prozessart</label>
+<input name="step_operation[]" maxlength="120" data-operation-input>
+</div>
+<div class="full">
+<label>Betreff</label>
+<input name="step_subject[]" maxlength="1000">
+</div>
+<div class="full">
+<label>Text</label>
+<textarea name="step_body[]" maxlength="30000"></textarea>
+</div>
+</div>
+</div>
+</div>
+</template>
+
 <?php endif; ?>
-</section>
+
 <?php elseif($selectedMask!==null): ?>
-<h1><?=h($selectedMask['name']??'')?></h1>
+
+<h1><?=html($selectedMask['name']??'')?></h1>
 <?php if(!empty($selectedMask['description'])): ?>
-<div class="panel"><?=nl2br(h($selectedMask['description']))?></div>
+<div class="panel"><?=nl2br(html($selectedMask['description']))?></div>
 <?php endif; ?>
+
 <div class="workspace">
-<div class="workflow" id="workflow"></div>
+<div id="workflow"></div>
 <aside class="variable-panel">
 <div class="panel">
 <h2>Variablen</h2>
-<div class="variable-list" id="variableList"></div>
+<textarea id="variableText" class="variable-text" spellcheck="false"></textarea>
 <div class="actions" style="margin-top:12px">
-<button type="button" id="copyVariables">Kopieren</button>
-<button type="button" class="secondary" id="clearVariables">Leeren</button>
-</div>
-</div>
-<div class="panel">
-<h2>Variablen einfügen</h2>
-<textarea class="import-box" id="variableImport" placeholder="Name: Max Mustermann&#10;Telefon: 089 123456"></textarea>
-<div class="actions" style="margin-top:10px">
 <button type="button" id="applyVariables">Übernehmen</button>
+<button type="button" class="secondary" id="copyVariables">Kopieren</button>
+<button type="button" class="secondary" id="resetVariables">Zurücksetzen</button>
 </div>
 </div>
 <div class="panel">
@@ -479,193 +725,293 @@ $formMask=$editedMask??[
 </div>
 </aside>
 </div>
-<script id="maskData" type="application/json"><?=json_encode($selectedMask,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?></script>
+
+<script id="maskData" type="application/json"><?=json_encode(
+$selectedMask,
+JSON_UNESCAPED_UNICODE|
+JSON_UNESCAPED_SLASHES|
+JSON_HEX_TAG|
+JSON_HEX_AMP|
+JSON_HEX_APOS|
+JSON_HEX_QUOT
+)?></script>
+
 <?php else: ?>
+
 <h1>Znuny-Prozesse</h1>
 <div class="cards">
 <?php
-$published=0;
+$publishedCount=0;
 foreach($data['masks'] as $mask):
-if(!is_array($mask)||empty($mask['published'])){continue;}
-$published++;
+if(!is_array($mask)||empty($mask['published'])){
+continue;
+}
+$publishedCount++;
 ?>
 <div class="card">
-<h3><?=h($mask['name']??'')?></h3>
-<p><?=nl2br(h($mask['description']??''))?></p>
+<h3><?=html($mask['name']??'')?></h3>
+<p><?=nl2br(html($mask['description']??''))?></p>
 <div class="muted"><?=count(is_array($mask['steps']??null)?$mask['steps']:[])?> Prozessschritte</div>
-<div class="actions"><button type="button" data-go="?_mask=<?=rawurlencode((string)($mask['id']??''))?>">Öffnen</button></div>
+<div class="actions">
+<button type="button" data-location="?_mask=<?=rawurlencode((string)($mask['id']??''))?>">Öffnen</button>
+</div>
 </div>
 <?php endforeach; ?>
-<?php if($published===0): ?>
+<?php if($publishedCount===0): ?>
 <div class="empty">Keine veröffentlichten Masken vorhanden.</div>
 <?php endif; ?>
 </div>
+
 <?php endif; ?>
 </main>
+
 <script>
 (function(){
 "use strict";
-document.querySelectorAll("[data-go]").forEach(function(button){
-button.addEventListener("click",function(){window.location.href=button.getAttribute("data-go")});
-});
-var menuButton=document.getElementById("menuButton");
-var menuOverlay=document.getElementById("menuOverlay");
-var menuBackdrop=document.getElementById("menuBackdrop");
-var menuClose=document.getElementById("menuClose");
-function openMenu(){
-menuOverlay.classList.add("visible");
-menuOverlay.setAttribute("aria-hidden","false");
-document.documentElement.style.overflow="hidden";
+
+document.addEventListener("click",function(event){
+var locationButton=event.target.closest("[data-location]");
+if(locationButton){
+window.location.href=locationButton.getAttribute("data-location");
+return;
 }
-function closeMenu(){
-menuOverlay.classList.remove("visible");
-menuOverlay.setAttribute("aria-hidden","true");
-document.documentElement.style.overflow="";
+
+if(event.target.id==="menuButton"){
+var overlay=document.getElementById("menuOverlay");
+overlay.classList.add("visible");
+overlay.setAttribute("aria-hidden","false");
+return;
 }
-menuButton.addEventListener("click",function(){menuOverlay.classList.contains("visible")?closeMenu():openMenu()});
-menuBackdrop.addEventListener("click",closeMenu);
-menuClose.addEventListener("click",closeMenu);
-document.addEventListener("keydown",function(event){if(event.key==="Escape"){closeMenu()}});
-document.querySelectorAll("[data-tab-button]").forEach(function(button){
-button.addEventListener("click",function(){
-document.querySelectorAll("[data-tab]").forEach(function(section){
-section.classList.toggle("hidden",section.getAttribute("data-tab")!==button.getAttribute("data-tab-button"));
-});
-});
-});
-function bindStep(step){
-var remove=step.querySelector("[data-remove-step]");
-var up=step.querySelector("[data-move-up]");
-var down=step.querySelector("[data-move-down]");
-var name=step.querySelector("[data-step-name]");
-var action=step.querySelector("[data-step-action]");
-var title=step.querySelector("[data-step-title]");
-var kind=step.querySelector("[data-step-kind]");
-remove.addEventListener("click",function(){
-if(document.querySelectorAll("#steps .editor-step").length<=1){alert("Mindestens ein Prozessschritt ist erforderlich.");return}
-step.remove();
-});
-up.addEventListener("click",function(){var previous=step.previousElementSibling;if(previous){step.parentNode.insertBefore(step,previous)}});
-down.addEventListener("click",function(){var next=step.nextElementSibling;if(next){step.parentNode.insertBefore(next,step)}});
-name.addEventListener("input",function(){title.textContent=name.value||"Unbenannter Schritt"});
-action.addEventListener("change",function(){kind.textContent=action.value==="ticket"?"Ticket":"Notiz"});
+
+if(event.target.id==="menuClose"||event.target.id==="menuBackdrop"){
+var menu=document.getElementById("menuOverlay");
+menu.classList.remove("visible");
+menu.setAttribute("aria-hidden","true");
+return;
 }
-document.querySelectorAll("#steps .editor-step").forEach(bindStep);
+
+var removeButton=event.target.closest("[data-remove]");
+if(removeButton){
+var item=removeButton.closest(".editor-item");
+var parent=item.parentElement;
+if(parent.id==="steps"&&parent.querySelectorAll(".editor-item").length===1){
+window.alert("Mindestens ein Prozessschritt ist erforderlich.");
+return;
+}
+item.remove();
+return;
+}
+
+var upButton=event.target.closest("[data-up]");
+if(upButton){
+var upItem=upButton.closest(".editor-item");
+var previous=upItem.previousElementSibling;
+if(previous){
+upItem.parentElement.insertBefore(upItem,previous);
+}
+return;
+}
+
+var downButton=event.target.closest("[data-down]");
+if(downButton){
+var downItem=downButton.closest(".editor-item");
+var next=downItem.nextElementSibling;
+if(next){
+downItem.parentElement.insertBefore(next,downItem);
+}
+return;
+}
+});
+
+document.addEventListener("input",function(event){
+if(event.target.matches("[data-field-label]")){
+var fieldItem=event.target.closest(".editor-item");
+fieldItem.querySelector("[data-field-title]").textContent=event.target.value||"Unbenanntes Feld";
+}
+
+if(event.target.matches("[data-step-name]")){
+var stepItem=event.target.closest(".editor-item");
+stepItem.querySelector("[data-step-title]").textContent=event.target.value||"Unbenannter Schritt";
+}
+
+if(event.target.matches("[data-operation-input]")){
+var operationItem=event.target.closest(".editor-item");
+operationItem.querySelector("[data-operation-title]").textContent=event.target.value;
+}
+});
+
+var addField=document.getElementById("addField");
+var fields=document.getElementById("fields");
+var fieldTemplate=document.getElementById("fieldTemplate");
+
+if(addField&&fields&&fieldTemplate){
+addField.addEventListener("click",function(){
+fields.appendChild(fieldTemplate.content.firstElementChild.cloneNode(true));
+});
+}
+
 var addStep=document.getElementById("addStep");
-var stepTemplate=document.getElementById("stepTemplate");
 var steps=document.getElementById("steps");
-if(addStep&&stepTemplate&&steps){
+var stepTemplate=document.getElementById("stepTemplate");
+
+if(addStep&&steps&&stepTemplate){
 addStep.addEventListener("click",function(){
-var step=stepTemplate.content.firstElementChild.cloneNode(true);
-steps.appendChild(step);
-bindStep(step);
-step.scrollIntoView({behavior:"smooth",block:"center"});
+steps.appendChild(stepTemplate.content.firstElementChild.cloneNode(true));
 });
 }
-var maskNode=document.getElementById("maskData");
-if(!maskNode){return}
+
+var maskData=document.getElementById("maskData");
+if(!maskData){
+return;
+}
+
 var mask;
-try{mask=JSON.parse(maskNode.textContent)}catch(error){return}
+try{
+mask=JSON.parse(maskData.textContent);
+}catch(error){
+return;
+}
+
 var workflow=document.getElementById("workflow");
-var variableList=document.getElementById("variableList");
+var variableText=document.getElementById("variableText");
+var names=[];
 var values={};
-function collectVariables(){
-(mask.steps||[]).forEach(function(step){
-["subject","body"].forEach(function(field){
-String(step[field]||"").replace(/\{\{([^{}]{1,80})\}\}/g,function(match,name){
+var pattern=/\{\{([^{}]{1,80})\}\}/g;
+
+function collect(source){
+String(source||"").replace(pattern,function(match,name){
 name=name.trim();
-if(name&&!Object.prototype.hasOwnProperty.call(values,name)){values[name]=""}
+if(name!==""&&!Object.prototype.hasOwnProperty.call(values,name)){
+names.push(name);
+values[name]=name;
+}
 return match;
 });
+pattern.lastIndex=0;
+}
+
+(mask.fields||[]).forEach(function(field){
+collect(field.value);
 });
+
+(mask.steps||[]).forEach(function(step){
+collect(step.subject);
+collect(step.body);
+});
+
+function serialize(){
+return names.map(function(name){
+return name+": "+values[name];
+}).join("\n");
+}
+
+function parse(){
+var lines=variableText.value.split(/\r?\n/);
+var currentName=null;
+var parsed={};
+
+lines.forEach(function(line){
+var colon=line.indexOf(":");
+var candidate="";
+
+if(colon>=0){
+candidate=line.slice(0,colon).trim();
+}
+
+if(candidate!==""&&Object.prototype.hasOwnProperty.call(values,candidate)){
+currentName=candidate;
+parsed[currentName]=line.slice(colon+1).replace(/^\s/,"");
+return;
+}
+
+if(currentName!==null){
+parsed[currentName]+="\n"+line;
+}
+});
+
+names.forEach(function(name){
+if(Object.prototype.hasOwnProperty.call(parsed,name)){
+if(parsed[name]===""){
+values[name]=name;
+}else{
+values[name]=parsed[name];
+}
+}
 });
 }
-function renderTemplate(container,text){
+
+function valueOf(name){
+if(Object.prototype.hasOwnProperty.call(values,name)&&values[name]!==""){
+return values[name];
+}
+return name;
+}
+
+function focusVariable(name){
+var lines=variableText.value.split(/\r?\n/);
+var offset=0;
+
+for(var index=0;index<lines.length;index++){
+var line=lines[index];
+var colon=line.indexOf(":");
+
+if(colon>=0&&line.slice(0,colon).trim()===name){
+var start=offset+colon+1;
+while(start<offset+line.length&&variableText.value.charAt(start)===" "){
+start++;
+}
+variableText.focus();
+variableText.setSelectionRange(start,offset+line.length);
+break;
+}
+
+offset+=line.length+1;
+}
+
+document.querySelectorAll(".variable").forEach(function(button){
+if(button.getAttribute("data-variable")===name){
+button.classList.add("active");
+}else{
+button.classList.remove("active");
+}
+});
+}
+
+function renderTemplate(container,source){
 container.textContent="";
-var source=String(text||"");
 var expression=/\{\{([^{}]{1,80})\}\}/g;
 var position=0;
 var match;
-while((match=expression.exec(source))!==null){
-if(match.index>position){container.appendChild(document.createTextNode(source.slice(position,match.index)))}
-var name=match[1].trim();
-var field=document.createElement("span");
-field.className="editable-variable";
-field.contentEditable="true";
-field.spellcheck=false;
-field.setAttribute("data-variable",name);
-field.setAttribute("role","textbox");
-field.setAttribute("aria-label",name);
-field.textContent=values[name]||name;
-field.addEventListener("focus",function(){
-if(!values[name]&&field.textContent===name){
-var selection=window.getSelection();
-var range=document.createRange();
-range.selectNodeContents(field);
-selection.removeAllRanges();
-selection.addRange(range);
+
+while((match=expression.exec(String(source||"")))!==null){
+if(match.index>position){
+container.appendChild(document.createTextNode(String(source).slice(position,match.index)));
 }
-});
-field.addEventListener("input",function(){
-values[name]=field.textContent.replace(/\r/g,"");
-synchronizeVariable(name,field);
-});
-container.appendChild(field);
+
+var name=match[1].trim();
+var button=document.createElement("button");
+button.type="button";
+button.className="variable";
+button.setAttribute("data-variable",name);
+button.textContent=valueOf(name);
+button.addEventListener("click",(function(variableName){
+return function(){
+focusVariable(variableName);
+};
+})(name));
+
+container.appendChild(button);
 position=expression.lastIndex;
 }
-if(position<source.length){container.appendChild(document.createTextNode(source.slice(position)))}
-}
-function synchronizeVariable(name,source){
-document.querySelectorAll("[data-variable]").forEach(function(element){
-if(element===source||element.getAttribute("data-variable")!==name){return}
-if(element.tagName==="TEXTAREA"){element.value=values[name]}else{element.textContent=values[name]||name}
-});
-}
-function renderVariables(){
-variableList.textContent="";
-Object.keys(values).forEach(function(name){
-var row=document.createElement("div");
-row.className="variable-row";
-var label=document.createElement("label");
-label.textContent=name;
-var input=document.createElement("textarea");
-input.rows=2;
-input.value=values[name];
-input.setAttribute("data-variable",name);
-input.addEventListener("input",function(){
-values[name]=input.value;
-synchronizeVariable(name,input);
-});
-var copy=document.createElement("button");
-copy.type="button";
-copy.className="secondary small";
-copy.textContent="Kopieren";
-copy.addEventListener("click",function(){copyText(values[name],copy)});
-row.appendChild(label);
-row.appendChild(input);
-row.appendChild(copy);
-variableList.appendChild(row);
-});
-if(Object.keys(values).length===0){
-var empty=document.createElement("div");
-empty.className="muted";
-empty.textContent="Keine Variablen vorhanden.";
-variableList.appendChild(empty);
+
+if(position<String(source||"").length){
+container.appendChild(document.createTextNode(String(source).slice(position)));
 }
 }
-function addTicketField(container,label,value){
-if(!value){return}
-var labelElement=document.createElement("div");
-var valueElement=document.createElement("div");
-labelElement.className="ticket-label";
-valueElement.className="ticket-value";
-labelElement.textContent=label;
-valueElement.textContent=value;
-container.appendChild(labelElement);
-container.appendChild(valueElement);
-}
-function renderWorkflow(){
+
+function render(){
 workflow.textContent="";
+
 (mask.steps||[]).forEach(function(step,index){
 if(index>0){
 var arrow=document.createElement("div");
@@ -673,70 +1019,108 @@ arrow.className="process-arrow";
 arrow.textContent="↓";
 workflow.appendChild(arrow);
 }
+
 var ticket=document.createElement("section");
 ticket.className="ticket";
+
 var header=document.createElement("div");
 header.className="ticket-header";
+
 var number=document.createElement("span");
 number.className="ticket-number";
 number.textContent=String(index+1);
+
 var title=document.createElement("strong");
 title.textContent=step.name||"Prozessschritt";
-var kind=document.createElement("span");
-kind.className="ticket-kind";
-kind.textContent=step.action==="ticket"?"Ticket":"Notiz";
+
+var operation=document.createElement("span");
+operation.className="ticket-operation";
+operation.textContent=step.operation||"";
+
 header.appendChild(number);
 header.appendChild(title);
-header.appendChild(kind);
-var fields=document.createElement("div");
-fields.className="ticket-fields";
-addTicketField(fields,"Tickettyp",step.type);
-addTicketField(fields,"Queue",step.queue);
-addTicketField(fields,"Service",step.service);
-addTicketField(fields,"Status",step.state);
+header.appendChild(operation);
+ticket.appendChild(header);
+
+var ticketFields=document.createElement("div");
+ticketFields.className="ticket-fields";
+
+(mask.fields||[]).forEach(function(field){
+if(!field.label){
+return;
+}
+
+var label=document.createElement("div");
+label.className="ticket-label";
+label.textContent=field.label;
+
+var value=document.createElement("div");
+value.className="ticket-value";
+renderTemplate(value,field.value);
+
+ticketFields.appendChild(label);
+ticketFields.appendChild(value);
+});
+
+if(ticketFields.childNodes.length>0){
+ticket.appendChild(ticketFields);
+}
+
 var content=document.createElement("div");
 content.className="ticket-content";
+
 if(step.subject){
 var subject=document.createElement("div");
 subject.className="ticket-subject";
 renderTemplate(subject,step.subject);
 content.appendChild(subject);
 }
-var text=document.createElement("div");
-text.className="ticket-text";
-renderTemplate(text,step.body);
-content.appendChild(text);
-ticket.appendChild(header);
-if(fields.childNodes.length){ticket.appendChild(fields)}
+
+var body=document.createElement("div");
+body.className="ticket-text";
+renderTemplate(body,step.body||"");
+content.appendChild(body);
+
 ticket.appendChild(content);
 workflow.appendChild(ticket);
 });
 }
-function textWithValues(text){
-return String(text||"").replace(/\{\{([^{}]{1,80})\}\}/g,function(match,name){
-name=name.trim();
-return values[name]||name;
+
+function plain(source){
+return String(source||"").replace(/\{\{([^{}]{1,80})\}\}/g,function(match,name){
+return valueOf(name.trim());
 });
 }
-function processText(){
+
+function processOutput(){
 return (mask.steps||[]).map(function(step,index){
-var lines=[];
-lines.push((index+1)+". "+String(step.name||"Prozessschritt"));
-lines.push("Art: "+(step.action==="ticket"?"Ticket":"Notiz"));
-if(step.type){lines.push("Tickettyp: "+step.type)}
-if(step.queue){lines.push("Queue: "+step.queue)}
-if(step.service){lines.push("Service: "+step.service)}
-if(step.state){lines.push("Status: "+step.state)}
-if(step.subject){lines.push("Betreff: "+textWithValues(step.subject))}
+var lines=[
+String(index+1)+". "+String(step.name||"Prozessschritt")
+];
+
+if(step.operation){
+lines.push("Prozessart: "+step.operation);
+}
+
+(mask.fields||[]).forEach(function(field){
+if(field.label){
+lines.push(field.label+": "+plain(field.value));
+}
+});
+
+if(step.subject){
+lines.push("Betreff: "+plain(step.subject));
+}
+
 lines.push("");
-lines.push(textWithValues(step.body));
+lines.push(plain(step.body));
+
 return lines.join("\n").trim();
 }).join("\n\n========================================\n\n");
 }
-function variableText(){
-return Object.keys(values).map(function(name){return name+": "+values[name]}).join("\n");
-}
-function fallbackCopy(text){
+
+function copy(text,button){
+function fallback(){
 var area=document.createElement("textarea");
 area.value=text;
 area.style.position="fixed";
@@ -746,45 +1130,57 @@ area.select();
 document.execCommand("copy");
 area.remove();
 }
-function copyText(text,button){
-function complete(){
-var original=button.textContent;
+
+function done(){
+var oldText=button.textContent;
 button.textContent="Kopiert";
-setTimeout(function(){button.textContent=original},1000);
+window.setTimeout(function(){
+button.textContent=oldText;
+},1000);
 }
+
 if(navigator.clipboard&&window.isSecureContext){
-navigator.clipboard.writeText(text).then(complete).catch(function(){fallbackCopy(text);complete()});
+navigator.clipboard.writeText(text).then(done).catch(function(){
+fallback();
+done();
+});
 }else{
-fallbackCopy(text);
-complete();
+fallback();
+done();
 }
 }
-document.getElementById("copyVariables").addEventListener("click",function(){
-copyText(variableText(),this);
+
+variableText.value=serialize();
+
+variableText.addEventListener("input",function(){
+parse();
+render();
 });
-document.getElementById("clearVariables").addEventListener("click",function(){
-Object.keys(values).forEach(function(name){values[name]=""});
-renderVariables();
-renderWorkflow();
-});
+
 document.getElementById("applyVariables").addEventListener("click",function(){
-var text=document.getElementById("variableImport").value;
-text.split(/\r?\n/).forEach(function(line){
-var separator=line.indexOf(":");
-if(separator<1){return}
-var name=line.slice(0,separator).trim();
-var value=line.slice(separator+1).trim();
-if(Object.prototype.hasOwnProperty.call(values,name)){values[name]=value}
+parse();
+variableText.value=serialize();
+render();
 });
-renderVariables();
-renderWorkflow();
+
+document.getElementById("copyVariables").addEventListener("click",function(){
+copy(variableText.value,this);
 });
+
+document.getElementById("resetVariables").addEventListener("click",function(){
+names.forEach(function(name){
+values[name]=name;
+});
+variableText.value=serialize();
+render();
+});
+
 document.getElementById("copyProcess").addEventListener("click",function(){
-copyText(processText(),this);
+parse();
+copy(processOutput(),this);
 });
-collectVariables();
-renderVariables();
-renderWorkflow();
+
+render();
 })();
 </script>
 </body>
